@@ -1,1 +1,0 @@
-And<for<'a> fn(Source<'a>) -> Result<(Source<'a>, Vec<Node<'a, ()>>), nom::Err<mesh::error::Error>> {program}, Result<(&str, &str), nom::Err<_>>>

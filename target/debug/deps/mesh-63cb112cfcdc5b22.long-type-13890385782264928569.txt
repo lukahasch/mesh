@@ -1,1 +1,0 @@
-Choice<(impl Parser<Source<'_>, Output = <impl Fn(Source<'_>) -> Result<(Source<'_>, Source<'_>), nom::Err<_>> as Parser<Source<'_>>>::Output>, impl Parser<Source<'_>, Output = <And<impl Fn(Source<'a>) -> Result<(Source<'a>, Source<'a>), nom::Err<nom::error::Error<Source<'a>>>>, {closure@src/parser/lib.rs:124:24: 124:44}> as Parser<Source<'_>>>::Output>)>

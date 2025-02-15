@@ -1,1 +1,0 @@
-nom::MapRes<impl Parser<Source<'_>, Output = Source<'_>, Error = error::Error>, {closure@src/parser/mod.rs:30:18: 30:34}>

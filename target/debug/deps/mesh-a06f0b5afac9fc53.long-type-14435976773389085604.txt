@@ -1,1 +1,0 @@
-nom::Map<impl Parser<Source<'_>, Output = Source<'_>, Error = <P as Parser<Source<'_>>>::Error>, {closure@src/parser/lib.rs:140:64: 140:67}>

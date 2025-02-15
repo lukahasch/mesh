@@ -1,1 +1,0 @@
-Or<nom::Map<for<'a> fn(Source<'a>) -> Result<(Source<'a>, Node<'a, ()>), nom::Err<error::Error>> {expression}, fn(Node<'_, ()>) -> Option<Node<'_, ()>> {Option::<Node<'_, ()>>::Some}>, And<impl Parser<Source<'_>, Output = Source<'_>, Error = error::Error>, impl Parser<Source<'_>, Output = Source<'_>, Error = error::Error>>>

@@ -1,1 +1,0 @@
-Or<fn(Source<'_>) -> Result<(Source<'_>, Source<'_>), nom::Err<error::Error>> {nom::character::complete::multispace0::<Source<'_>, error::Error>}, for<'a> fn(Source<'a>) -> Result<(Source<'a>, ()), nom::Err<error::Error>> {boundary}>

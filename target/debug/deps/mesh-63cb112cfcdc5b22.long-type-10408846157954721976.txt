@@ -1,2 +1,0 @@
-impl Fn(Source<'a>) -> Result<(Source<'a>, Source<'a>), nom::Err<nom::error::Error<Source<'a>>>>
-And<impl Fn(Source<'a>) -> Result<(Source<'a>, Source<'a>), nom::Err<nom::error::Error<Source<'a>>>>, {closure@src/parser/lib.rs:149:45: 149:92}>

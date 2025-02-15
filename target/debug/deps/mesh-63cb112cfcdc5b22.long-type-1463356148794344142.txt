@@ -1,1 +1,0 @@
-nom::Map<And<And<for<'a> fn(Source<'a>) -> Result<(Source<'a>, ()), nom::Err<error::Error>> {begin_block}, for<'a> fn(Source<'a>) -> Result<(Source<'a>, Vec<Node<'a, ()>>), nom::Err<error::Error>> {program}>, for<'a> fn(Source<'a>) -> Result<(Source<'a>, ()), nom::Err<error::Error>> {end_block}>, {closure@src/parser/mod.rs:121:14: 121:31}>

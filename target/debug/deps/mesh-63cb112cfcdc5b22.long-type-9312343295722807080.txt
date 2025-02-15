@@ -1,1 +1,0 @@
-Choice<(nom::Map<impl Parser<Source<'_>, Output = Source<'_>, Error = _>, {closure@src/parser/mod.rs:63:25: 63:41}>, nom::Map<impl Parser<Source<'_>, Output = Source<'_>, Error = _>, {closure@src/parser/mod.rs:68:26: 68:42}>)>

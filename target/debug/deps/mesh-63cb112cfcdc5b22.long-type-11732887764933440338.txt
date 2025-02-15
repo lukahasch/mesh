@@ -1,1 +1,0 @@
-And<impl Fn(Source<'_>) -> Result<(Source<'_>, Source<'_>), nom::Err<error::Error>>, impl Parser<Source<'_>, Output = (), Error = nom::error::Error<Source<'_>>>>
