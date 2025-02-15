@@ -19,7 +19,7 @@ pub const KEYWORDS: [&str; 12] = [
 ];
 
 pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
-    if Some(true) == source.char().map(|c| c.is_ascii_alphabetic()) {
+    if Some(true) == source.char().map(|c| c.is_ascii_alphabetic() || c == '_') {
         let (a, b) =
             source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
         if KEYWORDS.contains(&b.as_str()) {
@@ -227,7 +227,6 @@ pub fn variant(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
 
 pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     ws(alt((
-        ignore,
         rest,
         number_pattern,
         string_pattern,
@@ -236,6 +235,7 @@ pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
         capture,
         list_pattern,
         destructure,
+        ignore,
     )))
     .parse(source)
 }
@@ -474,13 +474,60 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
     ))
 }
 
-pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error> {
+pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
+    let begin = source.current();
+    let (source, _) = tag("enum")(source)?;
+    let (source, name) = ws(identifier).parse(source)?;
+    let (source, generics) = opt(delimited(
+        tag("("),
+        separated_list0(tag(","), pattern),
+        tag(")"),
+    ))
+    .parse(source)?;
+    let (source, _) = ws(tag(":")).parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, _) = begin_block.parse(source)?;
+    let (source, variants) = separated_list0(
+        boundary,
+        (
+            identifier,
+            opt(delimited(
+                tag("("),
+                separated_list0(tag(","), expression),
+                tag(")"),
+            )),
+        ),
+    )
+    .parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, body) = program.parse(source)?;
+    let (source, _) = end_block.parse(source)?;
+    let end = source.current();
+    Ok((
+        source,
+        Node {
+            tag: (),
+            span: begin + end,
+            expression: Expression::Enum {
+                name: name.as_str(),
+                generics: generics.unwrap_or_default(),
+                variants: variants
+                    .into_iter()
+                    .map(|(name, fields)| (name.as_str(), fields.unwrap_or_default()))
+                    .collect(),
+                body,
+            },
+        },
+    ))
+}
+
+pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
     let primary = |source| {
         alt((
             block,
             ws(alt((
-                r#struct, r#let, r#if, r#while, r#for, r#match, function, comment, list, boolean,
-                string, number, assign, variable,
+                r#struct, r#enum, r#let, r#if, r#while, r#for, r#match, function, comment, list,
+                boolean, string, number, assign, variable,
             ))),
         ))
         .parse(source)
@@ -1230,6 +1277,109 @@ mod tests {
         };
         assert_eq!(
             r#struct.parse_complete(source),
+            Ok((source.eof(), expected))
+        );
+    }
+
+    #[test]
+    fn test_enum() {
+        let source = Source::new(
+            "test",
+            "enum Option(T):\n    None\n    Some(T)\n    fn map(T2)(f: fn(_: T) -> T2) -> Option(T2):\n        None",
+        );
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 98),
+            expression: Expression::Enum {
+                name: "Option",
+                generics: vec![Pattern::Capture {
+                    name: "T",
+                    r#type: None,
+                }],
+                variants: vec![
+                    ("None", vec![]),
+                    (
+                        "Some",
+                        vec![Node {
+                            tag: (),
+                            span: Span::new("test", 34, 35),
+                            expression: Expression::Variable("T"),
+                        }],
+                    ),
+                ],
+                body: vec![Node {
+                    tag: (),
+                    span: Span::new("test", 41, 98),
+                    expression: Expression::Let {
+                        pattern: Pattern::Capture {
+                            name: "map",
+                            r#type: None,
+                        },
+                        value: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 41, 98),
+                            expression: Expression::Function {
+                                generics: vec![Pattern::Capture {
+                                    name: "T2",
+                                    r#type: None,
+                                }],
+                                args: vec![Pattern::Capture {
+                                    name: "f",
+                                    r#type: Some(Box::new(Node {
+                                        tag: (),
+                                        span: Span::new("test", 55, 69),
+                                        expression: Expression::Function {
+                                            generics: vec![],
+                                            args: vec![Pattern::Capture {
+                                                name: "_",
+                                                r#type: Some(Box::new(Node {
+                                                    tag: (),
+                                                    span: Span::new("test", 61, 62),
+                                                    expression: Expression::Variable("T"),
+                                                })),
+                                            }],
+                                            r#type: Some(Box::new(Node {
+                                                tag: (),
+                                                span: Span::new("test", 67, 69),
+                                                expression: Expression::Variable("T2"),
+                                            })),
+                                            body: None,
+                                        },
+                                    })),
+                                }],
+                                r#type: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 74, 83),
+                                    expression: Expression::Call {
+                                        function: Box::new(Node {
+                                            tag: (),
+                                            span: Span::new("test", 74, 80),
+                                            expression: Expression::Variable("Option"),
+                                        }),
+                                        args: vec![Node {
+                                            tag: (),
+                                            span: Span::new("test", 81, 83),
+                                            expression: Expression::Variable("T2"),
+                                        }],
+                                    },
+                                })),
+                                body: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 90, 98),
+                                    expression: Expression::Block(vec![Node {
+                                        tag: (),
+                                        span: Span::new("test", 94, 98),
+                                        expression: Expression::Variable("None"),
+                                    }]),
+                                })),
+                            },
+                        }),
+                    },
+                }],
+            },
+        };
+        assert_eq!(
+            expression.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }

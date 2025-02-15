@@ -174,11 +174,12 @@ fn one_indent(source: Source<'_>) -> IResult<Source<'_>, (), Error> {
 }
 
 /// either a semicolon or a newline and the current number of indents
-pub fn boundary<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
-    let next_indents: impl Parser<Source> = |source: Source<'a>| -> IResult<Source<'a>, (), Error> {
-        value((), count(one_indent, source.indent)).parse_complete(source)
-    };
-    let mut a = ws(tag::<&str, Source<'_>, Error>(";"));
+pub fn boundary<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error<'a>> {
+    let next_indents: impl Parser<Source> =
+        |source: Source<'a>| -> IResult<Source<'a>, (), Error<'a>> {
+            value((), count(one_indent, source.indent)).parse_complete(source)
+        };
+    let mut a = ws(tag::<&str, Source<'_>, Error<'_>>(";"));
     let mut b = ws(tag("\n").and(next_indents));
     if let Ok((s, _)) = a.parse_complete(source) {
         Ok((s, ()))
@@ -192,7 +193,7 @@ pub fn boundary<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
     }
 }
 
-pub fn begin_block(source: Source<'_>) -> IResult<Source<'_>, (), Error> {
+pub fn begin_block(source: Source<'_>) -> IResult<Source<'_>, (), Error<'_>> {
     one_indent(source).map(|(mut source, _)| {
         source.indent += 1;
         (source, ())
