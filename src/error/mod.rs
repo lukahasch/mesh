@@ -5,16 +5,17 @@ use crate::{Span, parser::lib::Source};
 #[derive(Debug, Clone, PartialEq)]
 #[repr(u32)]
 #[non_exhaustive]
-pub enum Error {
-    Debug(Span, &'static str) = 0,
+pub enum Error<'a> {
+    Debug(Span, &'a str) = 0,
     InternalKind(Span, ErrorKind) = 1,
     InternalChar(Span, char) = 2,
     InvalidLiteral { position: Span, problem: String } = 3,
-    Or(Vec<Error>) = 4,
-    Multi(Vec<Error>) = 5,
+    Or(Vec<Error<'a>>) = 4,
+    Multi(Vec<Error<'a>>) = 5,
+    KeywordAsIdentifier(Source<'a>) = 6,
 }
 
-impl<'a> ParseError<Source<'a>> for Error {
+impl<'a> ParseError<Source<'a>> for Error<'a> {
     fn from_char(input: Source<'a>, c: char) -> Self {
         Self::InternalChar(input.span(), c)
     }
@@ -61,7 +62,7 @@ impl<'a> ParseError<Source<'a>> for Error {
     }
 }
 
-impl<'a> FromExternalError<Source<'_>, Error> for Error {
+impl<'a> FromExternalError<Source<'_>, Error<'a>> for Error<'a> {
     fn from_external_error(input: Source<'_>, kind: nom::error::ErrorKind, e: Self) -> Self {
         e
     }

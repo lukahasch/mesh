@@ -14,9 +14,19 @@ use crate::{Expression, Node, Pattern, error::Error};
 
 pub mod lib;
 
+pub const KEYWORDS: [&str; 12] = [
+    "fn", "let", "if", "else", "while", "for", "match", "struct", "enum", "type", "do", "in",
+];
+
 pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
     if Some(true) == source.char().map(|c| c.is_ascii_alphabetic()) {
-        source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))
+        let (a, b) =
+            source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
+        if KEYWORDS.contains(&b.as_str()) {
+            Err(nom::Err::Error(Error::KeywordAsIdentifier(a)))
+        } else {
+            Ok((a, b))
+        }
     } else {
         Err(nom::Err::Error(Error::Debug(
             source.current(),
@@ -232,7 +242,7 @@ pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
 
 /// function expression fn(generics)(arguments) -> return_type: expr
 pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("fn")(source)?;
     let (source, identifier) = opt(ws(identifier)).parse(source)?;
     let (source, first) =
@@ -246,6 +256,7 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let (source, r#type) = opt(preceded(ws(tag("->")), expression)).parse(source)?;
     let (source, colon) = opt(ws(tag(":"))).parse(source)?;
     let (source, body) = if colon.is_some() {
+        let (source, _) = opt(boundary).parse(source)?;
         expression.map(Some).parse(source)?
     } else {
         (source, None)
@@ -255,7 +266,7 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     } else {
         (vec![], first)
     };
-    let end = source.span();
+    let end = source.current();
     match identifier {
         Some(identifier) => Ok((
             source,
@@ -297,12 +308,12 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn r#let(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("let")(source)?;
     let (source, pattern) = pattern.parse(source)?;
     let (source, _) = ws(tag("=")).parse(source)?;
     let (source, value) = expression.parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -317,11 +328,11 @@ pub fn r#let(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn assign(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, pattern) = pattern.parse(source)?;
     let (source, _) = ws(tag("=")).parse(source)?;
     let (source, value) = expression.parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -336,13 +347,13 @@ pub fn assign(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn r#if(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("if")(source)?;
     let (source, condition) = expression.parse(source)?;
     let (source, _) = ws(tag("then")).parse(source)?;
     let (source, then) = expression.parse(source)?;
     let (source, otherwise) = opt(ws(tag("else")).and(expression)).parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -358,12 +369,12 @@ pub fn r#if(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn r#while(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("while")(source)?;
     let (source, condition) = expression.parse(source)?;
     let (source, _) = ws(tag("do")).parse(source)?;
     let (source, body) = expression.parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -378,14 +389,14 @@ pub fn r#while(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn r#for(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("for")(source)?;
     let (source, pattern) = pattern.parse(source)?;
     let (source, _) = ws(tag("in")).parse(source)?;
     let (source, iterable) = expression.parse(source)?;
     let (source, _) = ws(tag("do")).parse(source)?;
     let (source, body) = expression.parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -401,7 +412,7 @@ pub fn r#for(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    let begin = source.span();
+    let begin = source.current();
     let (source, _) = tag("match")(source)?;
     let (source, value) = expression.parse(source)?;
     let (source, _) = ws(tag("with")).parse(source)?;
@@ -409,7 +420,7 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let (source, arms) =
         separated_list0(boundary, (pattern, ws(tag("=>")), expression)).parse(source)?;
     let (source, _) = boundary.or(end_block).parse(source)?;
-    let end = source.span();
+    let end = source.current();
     Ok((
         source,
         Node {
@@ -426,13 +437,50 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     ))
 }
 
+pub fn r#struct<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error> {
+    let begin = source.current();
+    let (source, _) = tag("struct")(source)?;
+    let (source, name) = ws(identifier).parse(source)?;
+    let (source, generics) = opt(delimited(
+        tag("("),
+        separated_list0(tag(","), pattern),
+        tag(")"),
+    ))
+    .parse(source)?;
+    let (source, _) = ws(tag(":")).parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, _) = begin_block.parse(source)?;
+    let (source, fields) =
+        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, body) = program.parse(source)?;
+    let (source, _) = end_block.parse(source)?;
+    let end = source.current();
+    Ok((
+        source,
+        Node {
+            tag: (),
+            span: begin + end,
+            expression: Expression::Struct {
+                name: name.as_str(),
+                generics: generics.unwrap_or_default(),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, _, r#type)| (name.as_str(), r#type))
+                    .collect(),
+                body,
+            },
+        },
+    ))
+}
+
 pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error> {
     let primary = |source| {
         alt((
             block,
             ws(alt((
-                r#let, r#if, r#while, r#for, r#match, function, comment, list, boolean, string,
-                number, assign, variable,
+                r#struct, r#let, r#if, r#while, r#for, r#match, function, comment, list, boolean,
+                string, number, assign, variable,
             ))),
         ))
         .parse(source)
@@ -1095,5 +1143,94 @@ mod tests {
             },
         };
         assert_eq!(assign.parse_complete(source), Ok((source.eof(), expected)));
+    }
+
+    #[test]
+    fn test_struct() {
+        let source = Source::new(
+            "test",
+            "struct Point:\n    x: i64\n    y: i64\n    fn add(self: Point, other: Point) -> Point:\n        10",
+        );
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 94),
+            expression: Expression::Struct {
+                name: "Point",
+                generics: vec![],
+                fields: vec![
+                    (
+                        "x",
+                        Node {
+                            tag: (),
+                            span: Span::new("test", 21, 24),
+                            expression: Expression::Variable("i64"),
+                        },
+                    ),
+                    (
+                        "y",
+                        Node {
+                            tag: (),
+                            span: Span::new("test", 32, 35),
+                            expression: Expression::Variable("i64"),
+                        },
+                    ),
+                ]
+                .into_iter()
+                .collect(),
+                body: vec![Node {
+                    tag: (),
+                    span: Span::new("test", 40, 94),
+                    expression: Expression::Let {
+                        pattern: Pattern::Capture {
+                            name: "add",
+                            r#type: None,
+                        },
+                        value: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 40, 94),
+                            expression: Expression::Function {
+                                generics: vec![],
+                                args: vec![
+                                    Pattern::Capture {
+                                        name: "self",
+                                        r#type: Some(Box::new(Node {
+                                            tag: (),
+                                            span: Span::new("test", 53, 58),
+                                            expression: Expression::Variable("Point"),
+                                        })),
+                                    },
+                                    Pattern::Capture {
+                                        name: "other",
+                                        r#type: Some(Box::new(Node {
+                                            tag: (),
+                                            span: Span::new("test", 67, 72),
+                                            expression: Expression::Variable("Point"),
+                                        })),
+                                    },
+                                ],
+                                r#type: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 77, 82),
+                                    expression: Expression::Variable("Point"),
+                                })),
+                                body: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 88, 94),
+                                    expression: Expression::Block(vec![Node {
+                                        tag: (),
+                                        span: Span::new("test", 92, 94),
+                                        expression: Expression::Integer(10),
+                                    }]),
+                                })),
+                            },
+                        }),
+                    },
+                }],
+            },
+        };
+        assert_eq!(
+            r#struct.parse_complete(source),
+            Ok((source.eof(), expected))
+        );
     }
 }
