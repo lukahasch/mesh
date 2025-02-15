@@ -5,7 +5,7 @@ use nom::{
     Compare, IResult, Input, Needed, Parser,
     branch::alt,
     bytes::complete::{tag, take_while},
-    combinator::{eof, value},
+    combinator::value,
     multi::count,
 };
 
@@ -80,7 +80,7 @@ impl Deref for Source<'_> {
     }
 }
 
-impl<'a> Input for Source<'a> {
+impl Input for Source<'_> {
     type Item = char;
     type Iter = impl Iterator<Item = char>;
     type IterIndices = impl Iterator<Item = (usize, char)>;
@@ -145,7 +145,7 @@ impl<'a> Input for Source<'a> {
     }
 }
 
-impl<'a, 'b> Compare<&'b str> for Source<'a> {
+impl<'b> Compare<&'b str> for Source<'_> {
     fn compare(&self, t: &'b str) -> nom::CompareResult {
         self.current.compare(t)
     }
@@ -169,7 +169,7 @@ pub fn ws<'a, P: Parser<Source<'a>>>(
 }
 
 /// four spaces or one tab
-fn one_indent<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
+fn one_indent(source: Source<'_>) -> IResult<Source<'_>, (), Error> {
     alt((value((), tag("    ")), value((), tag("\t")))).parse_complete(source)
 }
 
@@ -192,7 +192,7 @@ pub fn boundary<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
     }
 }
 
-pub fn begin_block<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
+pub fn begin_block(source: Source<'_>) -> IResult<Source<'_>, (), Error> {
     one_indent(source).map(|(mut source, _)| {
         source.indent += 1;
         (source, ())
@@ -200,7 +200,7 @@ pub fn begin_block<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error> {
 }
 
 /// use as boundary.or(end_block)
-pub fn end_block<'a>(mut source: Source<'a>) -> IResult<Source<'a>, (), Error> {
+pub fn end_block(mut source: Source<'_>) -> IResult<Source<'_>, (), Error> {
     source.indent -= 1;
     Ok((source, ()))
 }

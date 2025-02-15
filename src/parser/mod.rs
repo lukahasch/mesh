@@ -1,13 +1,13 @@
-use lib::{Source, begin_block, boundary, dbg, end_block, ws};
+use lib::{Source, begin_block, boundary, end_block, ws};
 use nom::{
     IResult, Input, Parser,
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
-    combinator::{eof, fail, opt},
-    multi::{many0, separated_list0},
-    sequence::{delimited, preceded, terminated, tuple},
+    combinator::{fail, opt},
+    multi::separated_list0,
+    sequence::{delimited, preceded},
 };
-use nom_language::precedence::{Operation, Unary, precedence, unary_op};
+use nom_language::precedence::{Operation, precedence, unary_op};
 use std::num::{ParseFloatError, ParseIntError};
 
 use crate::{Expression, Node, Pattern, error::Error};
@@ -190,7 +190,7 @@ pub fn capture(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
 
 pub fn list_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     delimited(tag("["), separated_list0(tag(","), pattern), tag("]"))
-        .map(|list| Pattern::List(list))
+        .map(Pattern::List)
         .parse(source)
 }
 
@@ -285,7 +285,7 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
                             generics,
                             args,
                             r#type: r#type.map(Box::new),
-                            body: body.map(|node| Box::new(node)),
+                            body: body.map(Box::new),
                         },
                     }),
                 },
@@ -300,7 +300,7 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
                     generics,
                     args,
                     r#type: r#type.map(Box::new),
-                    body: body.map(|node| Box::new(node)),
+                    body: body.map(Box::new),
                 },
             },
         )),
@@ -437,7 +437,7 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     ))
 }
 
-pub fn r#struct<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error> {
+pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("struct")(source)?;
     let (source, name) = ws(identifier).parse(source)?;
@@ -545,7 +545,7 @@ pub fn program(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
     )
     .and(opt(boundary))
     .parse(source)
-    .map(|(source, (nodes, _))| (source, nodes.into_iter().filter_map(|node| node).collect()))
+    .map(|(source, (nodes, _))| (source, nodes.into_iter().flatten().collect()))
 }
 
 #[cfg(test)]
