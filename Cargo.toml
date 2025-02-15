@@ -1,0 +1,9 @@
+[package]
+name = "mesh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+nom = "8.0.0"
+nom-language = "0.1.0"
+smallmap = "1.4.2"

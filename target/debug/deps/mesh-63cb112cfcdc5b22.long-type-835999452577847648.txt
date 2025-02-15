@@ -1,0 +1,1 @@
+nom::Map<And<impl Parser<Source<'_>, Output = Option<<impl Parser<Source<'_>, Output = Node<'_, ()>, Error = error::Error> as Parser<Source<'_>>>::Output>, Error = error::Error>, impl Parser<Source<'_>, Output = Vec<(Source<'_>, Source<'_>, Pattern<'_, ()>)>, Error = error::Error>>, {closure@src/parser/mod.rs:193:14: 193:32}>

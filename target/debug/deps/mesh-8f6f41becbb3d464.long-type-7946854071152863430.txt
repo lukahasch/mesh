@@ -1,0 +1,1 @@
+std::iter::Map<std::slice::Iter<'_, Pattern<'_, ()>>, for<'a> fn(Pattern<'a, ()>) -> String {fmt_pattern}>

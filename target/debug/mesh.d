@@ -1,0 +1,1 @@
+/Users/lukahasch/Desktop/projects/mesh/target/debug/mesh: /Users/lukahasch/Desktop/projects/mesh/src/error/mod.rs /Users/lukahasch/Desktop/projects/mesh/src/fmt/mod.rs /Users/lukahasch/Desktop/projects/mesh/src/lib.rs /Users/lukahasch/Desktop/projects/mesh/src/main.rs /Users/lukahasch/Desktop/projects/mesh/src/parser/lib.rs /Users/lukahasch/Desktop/projects/mesh/src/parser/mod.rs

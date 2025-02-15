@@ -1,0 +1,1 @@
+nom::Map<And<nom::Map<fn(Source<'_>) -> Result<(Source<'_>, Source<'_>), nom::Err<<P as Parser<Source<'_>>>::Error>> {nom::character::complete::multispace0::<Source<'_>, <P as Parser<Source<'_>>>::Error>}, {closure@src/parser/lib.rs:95:14: 95:17}>, P>, {closure@src/parser/lib.rs:97:14: 97:27}>

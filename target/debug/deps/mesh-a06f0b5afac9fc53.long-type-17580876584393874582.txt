@@ -1,0 +1,1 @@
+fn(Source<'_>) -> Result<(Source<'_>, Source<'_>), nom::Err<error::Error>> {eof::<Source<'_>, error::Error>}

@@ -1,0 +1,2 @@
+And<nom::Map<impl Parser<Source<'a>, Output = Source<'a>, Error = <P as Parser<Source<'a>>>::Error>, {closure@src/parser/lib.rs:137:14: 137:17}>, P>
+nom::Map<And<nom::Map<impl Parser<Source<'a>, Output = Source<'a>, Error = <P as Parser<Source<'a>>>::Error>, {closure@src/parser/lib.rs:137:14: 137:17}>, P>, {closure@src/parser/lib.rs:139:14: 139:27}>
