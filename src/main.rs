@@ -5,11 +5,12 @@ fn main() {
     let file = "example.mesh";
     let input = std::fs::read_to_string(file).unwrap();
     let source = Source::new(file, &input);
-    let (_, (result, _)) = mesh::parser::program
-        .and(eof)
-        .parse_complete(source)
-        .unwrap();
-    for node in result {
-        println!("{:?}", node);
+    let result = mesh::parser::parser.parse_complete(source);
+    match result {
+        Ok((_, ast)) => println!("{:#?}", ast),
+        Err(nom::Err::Failure(error)) | Err(nom::Err::Error(error)) => {
+            error.report().eprint(error.cache()).unwrap();
+        }
+        Err(nom::Err::Incomplete(_)) => unreachable!(),
     }
 }

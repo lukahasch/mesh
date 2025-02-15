@@ -1,21 +1,35 @@
-use lib::{Source, begin_block, boundary, end_block, ws};
+use lib::{Source, begin_block, boundary, debug, end_block, ws};
 use nom::{
     IResult, Input, Parser,
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
-    combinator::{fail, opt},
-    multi::separated_list0,
+    combinator::{eof, fail, opt, peek},
+    multi::{many0, separated_list0},
     sequence::{delimited, preceded},
 };
 use nom_language::precedence::{Operation, precedence, unary_op};
+use smallmap::Map;
 use std::num::{ParseFloatError, ParseIntError};
 
 use crate::{Expression, Node, Pattern, error::Error};
 
 pub mod lib;
 
-pub const KEYWORDS: [&str; 12] = [
-    "fn", "let", "if", "else", "while", "for", "match", "struct", "enum", "type", "do", "in",
+pub const KEYWORDS: [&str; 14] = [
+    "fn",
+    "let",
+    "if",
+    "else",
+    "while",
+    "for",
+    "match",
+    "struct",
+    "enum",
+    "type",
+    "do",
+    "in",
+    "interface",
+    "impl",
 ];
 
 pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
@@ -43,7 +57,7 @@ pub fn comment(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
             span: source.span() + slashes.span(),
             expression: Expression::Comment(source.as_str()),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn number(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -69,7 +83,7 @@ pub fn number(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
                 },
             })
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn string(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -81,7 +95,7 @@ pub fn string(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
             span: source.span() + b.span() + e.span(),
             expression: Expression::String(source.as_str()),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn boolean(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -97,7 +111,7 @@ pub fn boolean(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
             expression: Expression::Boolean(false),
         }),
     ))
-    .parse(source)
+    .parse_complete(source)
 }
 
 pub fn variable(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -107,7 +121,7 @@ pub fn variable(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
             span: source.span(),
             expression: Expression::Variable(source.as_str()),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -121,7 +135,7 @@ pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
                 + 1,
             expression: Expression::List(list),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn block(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
@@ -140,14 +154,16 @@ pub fn block(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn ignore(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    tag("_").map(|_: Source| Pattern::Ignore).parse(source)
+    tag("_")
+        .map(|_: Source| Pattern::Ignore)
+        .parse_complete(source)
 }
 
 pub fn rest(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     tag("..")
         .and(opt(identifier))
         .map(|(_, source)| Pattern::Rest(source.map(|source| source.as_str())))
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn number_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -157,7 +173,7 @@ pub fn number_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error>
             Expression::Float(f) => Pattern::Float(f),
             _ => unreachable!(),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn string_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -166,7 +182,7 @@ pub fn string_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error>
             Expression::String(s) => Pattern::String(s),
             _ => unreachable!(),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn boolean_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -175,7 +191,7 @@ pub fn boolean_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error
             Expression::Boolean(b) => Pattern::Boolean(b),
             _ => unreachable!(),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn capture(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -185,13 +201,13 @@ pub fn capture(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
             name: source.as_str(),
             r#type: r#type.map(Box::new),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn list_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     delimited(tag("["), separated_list0(tag(","), pattern), tag("]"))
         .map(Pattern::List)
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn destructure(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -208,7 +224,7 @@ pub fn destructure(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
                 .map(|(identifier, _, pattern)| (identifier.as_str(), pattern))
                 .collect(),
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn variant(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -222,7 +238,7 @@ pub fn variant(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
             name: source.as_str(),
             fields,
         })
-        .parse(source)
+        .parse_complete(source)
 }
 
 pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
@@ -237,27 +253,27 @@ pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
         destructure,
         ignore,
     )))
-    .parse(source)
+    .parse_complete(source)
 }
 
 /// function expression fn(generics)(arguments) -> return_type: expr
 pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("fn")(source)?;
-    let (source, identifier) = opt(ws(identifier)).parse(source)?;
-    let (source, first) =
-        delimited(tag("("), separated_list0(ws(tag(",")), pattern), tag(")")).parse(source)?;
+    let (source, identifier) = opt(ws(identifier)).parse_complete(source)?;
+    let (source, first) = delimited(tag("("), separated_list0(ws(tag(",")), pattern), tag(")"))
+        .parse_complete(source)?;
     let (source, second) = opt(delimited(
         tag("("),
         separated_list0(ws(tag(",")), pattern),
         tag(")"),
     ))
-    .parse(source)?;
-    let (source, r#type) = opt(preceded(ws(tag("->")), expression)).parse(source)?;
-    let (source, colon) = opt(ws(tag(":"))).parse(source)?;
+    .parse_complete(source)?;
+    let (source, r#type) = opt(preceded(ws(tag("->")), expression)).parse_complete(source)?;
+    let (source, colon) = opt(ws(tag(":"))).parse_complete(source)?;
     let (source, body) = if colon.is_some() {
-        let (source, _) = opt(boundary).parse(source)?;
-        expression.map(Some).parse(source)?
+        let (source, _) = opt(boundary).parse_complete(source)?;
+        expression.map(Some).parse_complete(source)?
     } else {
         (source, None)
     };
@@ -310,9 +326,9 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#let(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("let")(source)?;
-    let (source, pattern) = pattern.parse(source)?;
-    let (source, _) = ws(tag("=")).parse(source)?;
-    let (source, value) = expression.parse(source)?;
+    let (source, pattern) = pattern.parse_complete(source)?;
+    let (source, _) = ws(tag("=")).parse_complete(source)?;
+    let (source, value) = expression.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -329,9 +345,9 @@ pub fn r#let(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 
 pub fn assign(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
-    let (source, pattern) = pattern.parse(source)?;
-    let (source, _) = ws(tag("=")).parse(source)?;
-    let (source, value) = expression.parse(source)?;
+    let (source, pattern) = pattern.parse_complete(source)?;
+    let (source, _) = ws(tag("=")).parse_complete(source)?;
+    let (source, value) = expression.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -349,10 +365,10 @@ pub fn assign(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#if(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("if")(source)?;
-    let (source, condition) = expression.parse(source)?;
-    let (source, _) = ws(tag("then")).parse(source)?;
-    let (source, then) = expression.parse(source)?;
-    let (source, otherwise) = opt(ws(tag("else")).and(expression)).parse(source)?;
+    let (source, condition) = expression.parse_complete(source)?;
+    let (source, _) = ws(tag("then")).parse_complete(source)?;
+    let (source, then) = expression.parse_complete(source)?;
+    let (source, otherwise) = opt(ws(tag("else")).and(expression)).parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -371,9 +387,9 @@ pub fn r#if(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#while(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("while")(source)?;
-    let (source, condition) = expression.parse(source)?;
-    let (source, _) = ws(tag("do")).parse(source)?;
-    let (source, body) = expression.parse(source)?;
+    let (source, condition) = expression.parse_complete(source)?;
+    let (source, _) = ws(tag("do")).parse_complete(source)?;
+    let (source, body) = expression.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -391,11 +407,11 @@ pub fn r#while(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#for(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("for")(source)?;
-    let (source, pattern) = pattern.parse(source)?;
-    let (source, _) = ws(tag("in")).parse(source)?;
-    let (source, iterable) = expression.parse(source)?;
-    let (source, _) = ws(tag("do")).parse(source)?;
-    let (source, body) = expression.parse(source)?;
+    let (source, pattern) = pattern.parse_complete(source)?;
+    let (source, _) = ws(tag("in")).parse_complete(source)?;
+    let (source, iterable) = expression.parse_complete(source)?;
+    let (source, _) = ws(tag("do")).parse_complete(source)?;
+    let (source, body) = expression.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -414,12 +430,12 @@ pub fn r#for(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("match")(source)?;
-    let (source, value) = expression.parse(source)?;
-    let (source, _) = ws(tag("with")).parse(source)?;
-    let (source, _) = boundary.and(begin_block).parse(source)?;
+    let (source, value) = expression.parse_complete(source)?;
+    let (source, _) = ws(tag("with")).parse_complete(source)?;
+    let (source, _) = boundary.and(begin_block).parse_complete(source)?;
     let (source, arms) =
-        separated_list0(boundary, (pattern, ws(tag("=>")), expression)).parse(source)?;
-    let (source, _) = boundary.or(end_block).parse(source)?;
+        separated_list0(boundary, (pattern, ws(tag("=>")), expression)).parse_complete(source)?;
+    let (source, _) = boundary.or(end_block).parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -440,22 +456,21 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("struct")(source)?;
-    let (source, name) = ws(identifier).parse(source)?;
+    let (source, name) = ws(identifier).parse_complete(source)?;
     let (source, generics) = opt(delimited(
         tag("("),
         separated_list0(tag(","), pattern),
         tag(")"),
     ))
-    .parse(source)?;
-    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
-    let (source, _) = ws(tag(":")).parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, _) = begin_block.parse(source)?;
+    .parse_complete(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
+    let (source, _) = ws(tag(":")).parse_complete(source)?;
+    let (source, _) = boundary.parse_complete(source)?;
+    let (source, _) = begin_block.parse_complete(source)?;
     let (source, fields) =
-        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, body) = program.parse(source)?;
-    let (source, _) = end_block.parse(source)?;
+        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
+    let (source, body) = program.parse_complete(source)?;
+    let (source, _) = end_block.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -479,17 +494,17 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
 pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
     let begin = source.current();
     let (source, _) = tag("enum")(source)?;
-    let (source, name) = ws(identifier).parse(source)?;
+    let (source, name) = ws(identifier).parse_complete(source)?;
     let (source, generics) = opt(delimited(
         tag("("),
         separated_list0(tag(","), pattern),
         tag(")"),
     ))
-    .parse(source)?;
-    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
-    let (source, _) = ws(tag(":")).parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, _) = begin_block.parse(source)?;
+    .parse_complete(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
+    let (source, _) = ws(tag(":")).parse_complete(source)?;
+    let (source, _) = boundary.parse_complete(source)?;
+    let (source, _) = begin_block.parse_complete(source)?;
     let (source, variants) = separated_list0(
         boundary,
         (
@@ -501,10 +516,9 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
             )),
         ),
     )
-    .parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, body) = program.parse(source)?;
-    let (source, _) = end_block.parse(source)?;
+    .parse_complete(source)?;
+    let (source, body) = program.parse_complete(source)?;
+    let (source, _) = end_block.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -528,22 +542,21 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
 pub fn interface<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
     let begin = source.current();
     let (source, _) = tag("interface")(source)?;
-    let (source, name) = ws(identifier).parse(source)?;
+    let (source, name) = ws(identifier).parse_complete(source)?;
     let (source, generics) = opt(delimited(
         tag("("),
         separated_list0(tag(","), pattern),
         tag(")"),
     ))
-    .parse(source)?;
-    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
-    let (source, _) = ws(tag(":")).parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, _) = begin_block.parse(source)?;
+    .parse_complete(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
+    let (source, _) = ws(tag(":")).parse_complete(source)?;
+    let (source, _) = boundary.parse_complete(source)?;
+    let (source, _) = begin_block.parse_complete(source)?;
     let (source, fields) =
-        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse(source)?;
-    let (source, _) = boundary.parse(source)?;
-    let (source, body) = program.parse(source)?;
-    let (source, _) = end_block.parse(source)?;
+        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
+    let (source, body) = program.parse_complete(source)?;
+    let (source, _) = end_block.parse_complete(source)?;
     let end = source.current();
     Ok((
         source,
@@ -564,16 +577,73 @@ pub fn interface<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Er
     ))
 }
 
+pub fn implementation<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
+    // impl <generics> <interface> for <type> where <where>: <fields> <body>
+    let begin = source.current();
+    let (source, _) = tag("impl")(source)?;
+    let (source, generics) = opt(delimited(
+        tag("("),
+        separated_list0(tag(","), pattern),
+        tag(")"),
+    ))
+    .parse_complete(source)?;
+    let (source, interface) = expression.parse_complete(source)?;
+    let (source, _) = ws(tag("for")).parse_complete(source)?;
+    let (source, r#type) = expression.parse_complete(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
+    let (source, _) = ws(tag(":")).parse_complete(source)?;
+    let (source, _) = boundary.parse_complete(source)?;
+    let (source, _) = begin_block.parse_complete(source)?;
+    let (source, fields) =
+        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
+    let (source, body) = program.parse_complete(source)?;
+    let (source, _) = end_block.parse_complete(source)?;
+    let end = source.current();
+    Ok((
+        source,
+        Node {
+            tag: (),
+            span: begin + end,
+            expression: Expression::Implementation {
+                generics: generics.unwrap_or_default(),
+                interface: Box::new(interface),
+                r#type: Box::new(r#type),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, _, r#type)| (name.as_str(), r#type))
+                    .collect(),
+                body,
+                r#where: r#where.map(Box::new),
+            },
+        },
+    ))
+}
+
 pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
     let primary = |source| {
         alt((
             block,
             ws(alt((
-                r#struct, r#enum, r#let, r#if, r#while, r#for, r#match, function, comment, list,
-                boolean, string, number, assign, variable,
+                implementation,
+                interface,
+                r#struct,
+                r#enum,
+                r#let,
+                r#if,
+                r#while,
+                r#for,
+                r#match,
+                function,
+                comment,
+                list,
+                boolean,
+                string,
+                number,
+                assign,
+                variable,
             ))),
         ))
-        .parse(source)
+        .parse_complete(source)
     };
     pub enum Operator<'a> {
         Access(&'a str),
@@ -621,21 +691,35 @@ pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, E
             _ => unreachable!(),
         },
     )
-    .parse(source)
+    .parse_complete(source)
+}
+
+/// consume all empty lines but stop before the \n of the last empty line
+pub fn empty_lines<T>(mut source: Source) -> IResult<Source, Option<T>, Error> {
+    while let Ok((s, _)) = ws(tag::<&str, Source, Error>("\n")).parse_complete(source) {
+        source = s;
+    }
+    Ok((source.back(1), None))
+}
+
+pub fn seperator(source: Source) -> IResult<Source, (), Error> {
+    empty_lines::<()>
+        .and(boundary)
+        .map(|_| ())
+        .parse_complete(source)
 }
 
 pub fn program(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
-    separated_list0(
-        boundary,
-        expression
-            .map(Some)
-            .or(take_while(|c| c == ' ' || c == '\t')
-                .and(tag("\n"))
-                .map(|_| None)),
-    )
-    .and(opt(boundary))
-    .parse(source)
-    .map(|(source, (nodes, _))| (source, nodes.into_iter().flatten().collect()))
+    let (source, _) = opt(seperator).parse_complete(source)?;
+    separated_list0(seperator, expression).parse_complete(source)
+}
+
+pub fn parser(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
+    program
+        .and(empty_lines::<()>.and(tag("\n")))
+        .and(eof)
+        .map(|((a, _), _)| a)
+        .parse_complete(source)
 }
 
 #[cfg(test)]
@@ -1437,11 +1521,197 @@ mod tests {
         );
         let expected = Node {
             tag: (),
-            span: Span::new("test", 0, 79),
-            expression: Expression::Integer(0),
+            span: Span::new("test", 0, 90),
+            expression: Expression::Interface {
+                name: "Add",
+                generics: vec![Pattern::Capture {
+                    name: "Other",
+                    r#type: None,
+                }],
+                fields: vec![(
+                    "field",
+                    Node {
+                        tag: (),
+                        span: Span::new("test", 42, 45),
+                        expression: Expression::Variable("i32"),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+                body: vec![Node {
+                    tag: (),
+                    span: Span::new("test", 50, 90),
+                    expression: Expression::Let {
+                        pattern: Pattern::Capture {
+                            name: "add",
+                            r#type: None,
+                        },
+                        value: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 50, 90),
+                            expression: Expression::Function {
+                                generics: vec![],
+                                args: vec![
+                                    Pattern::Capture {
+                                        name: "self",
+                                        r#type: Some(Box::new(Node {
+                                            tag: (),
+                                            span: Span::new("test", 63, 67),
+                                            expression: Expression::Variable("Self"),
+                                        })),
+                                    },
+                                    Pattern::Capture {
+                                        name: "other",
+                                        r#type: Some(Box::new(Node {
+                                            tag: (),
+                                            span: Span::new("test", 76, 81),
+                                            expression: Expression::Variable("Other"),
+                                        })),
+                                    },
+                                ],
+                                r#type: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 86, 90),
+                                    expression: Expression::Variable("Self"),
+                                })),
+                                body: None,
+                            },
+                        }),
+                    },
+                }],
+                r#where: Some(Box::new(Node {
+                    tag: (),
+                    span: Span::new("test", 27, 29),
+                    expression: Expression::Integer(10),
+                })),
+            },
         };
         assert_eq!(
             r#interface.parse_complete(source),
+            Ok((source.eof(), expected))
+        );
+    }
+
+    #[test]
+    fn test_implementation() {
+        let source = Source::new(
+            "test",
+            "impl(O, E) Try(O, E) for Result(O,E):\n    fn try(self): self",
+        );
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 60),
+            expression: Expression::Implementation {
+                generics: vec![
+                    Pattern::Capture {
+                        name: "O",
+                        r#type: None,
+                    },
+                    Pattern::Capture {
+                        name: "E",
+                        r#type: None,
+                    },
+                ],
+                interface: Box::new(Node {
+                    tag: (),
+                    span: Span::new("test", 11, 19),
+                    expression: Expression::Call {
+                        function: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 11, 14),
+                            expression: Expression::Variable("Try"),
+                        }),
+                        args: vec![
+                            Node {
+                                tag: (),
+                                span: Span::new("test", 15, 16),
+                                expression: Expression::Variable("O"),
+                            },
+                            Node {
+                                tag: (),
+                                span: Span::new("test", 18, 19),
+                                expression: Expression::Variable("E"),
+                            },
+                        ],
+                    },
+                }),
+                r#type: Box::new(Node {
+                    tag: (),
+                    span: Span::new("test", 25, 35),
+                    expression: Expression::Call {
+                        function: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 25, 31),
+                            expression: Expression::Variable("Result"),
+                        }),
+                        args: vec![
+                            Node {
+                                tag: (),
+                                span: Span::new("test", 32, 33),
+                                expression: Expression::Variable("O"),
+                            },
+                            Node {
+                                tag: (),
+                                span: Span::new("test", 34, 35),
+                                expression: Expression::Variable("E"),
+                            },
+                        ],
+                    },
+                }),
+                fields: Map::new(),
+                body: vec![Node {
+                    tag: (),
+                    span: Span::new("test", 42, 60),
+                    expression: Expression::Let {
+                        pattern: Pattern::Capture {
+                            name: "try",
+                            r#type: None,
+                        },
+                        value: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 42, 60),
+                            expression: Expression::Function {
+                                generics: vec![],
+                                args: vec![Pattern::Capture {
+                                    name: "self",
+                                    r#type: None,
+                                }],
+                                r#type: None,
+                                body: Some(Box::new(Node {
+                                    tag: (),
+                                    span: Span::new("test", 56, 60),
+                                    expression: Expression::Variable("self"),
+                                })),
+                            },
+                        }),
+                    },
+                }],
+                r#where: None,
+            },
+        };
+        assert_eq!(
+            implementation.parse_complete(source),
+            Ok((source.eof(), expected))
+        );
+    }
+
+    #[test]
+    fn test_access() {
+        let source = Source::new("test", "x.y");
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 2),
+            expression: Expression::Access {
+                object: Box::new(Node {
+                    tag: (),
+                    span: Span::new("test", 0, 1),
+                    expression: Expression::Variable("x"),
+                }),
+                field: "y",
+            },
+        };
+        assert_eq!(
+            expression.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }

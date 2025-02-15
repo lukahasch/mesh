@@ -7,7 +7,7 @@ pub mod error;
 pub mod fmt;
 pub mod parser;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct Span {
     pub file: &'static str,
     pub range: Range<usize>,
@@ -156,7 +156,13 @@ impl<'a> Add<&'a Span> for Span {
 
     fn add(self, other: &'a Span) -> Span {
         Span {
-            file: self.file,
+            file: if self.file == other.file {
+                self.file
+            } else if self.file.is_empty() {
+                other.file
+            } else {
+                panic!("tried adding spans from differing files")
+            },
             range: self.range.start.min(other.range.start)..other.range.end.max(self.range.end),
         }
     }
@@ -179,5 +185,21 @@ impl Span {
             file,
             range: start..end,
         }
+    }
+}
+
+impl ariadne::Span for Span {
+    type SourceId = &'static str;
+
+    fn source(&self) -> &Self::SourceId {
+        &self.file
+    }
+
+    fn start(&self) -> usize {
+        self.range.start
+    }
+
+    fn end(&self) -> usize {
+        self.range.end
     }
 }

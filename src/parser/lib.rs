@@ -70,6 +70,19 @@ impl<'a> Source<'a> {
             indent: self.indent,
         }
     }
+
+    pub fn back(&self, n: usize) -> Self {
+        Self {
+            original: self.original,
+            current: if self.offset() >= n {
+                &self.original[self.offset() - n..]
+            } else {
+                &self.original[..self.offset()]
+            },
+            file: self.file,
+            indent: self.indent,
+        }
+    }
 }
 
 impl Deref for Source<'_> {
@@ -206,11 +219,14 @@ pub fn end_block(mut source: Source<'_>) -> IResult<Source<'_>, (), Error> {
     Ok((source, ()))
 }
 
-pub fn dbg<'a, P: Parser<Source<'a>>>(
+pub fn debug<'a, P: Parser<Source<'a>>>(
     p: P,
 ) -> impl Parser<Source<'a>, Output = P::Output, Error = P::Error>
 where
     P::Output: std::fmt::Debug,
 {
-    p.map(|output| dbg!(output))
+    (|source| Ok((dbg!(source), ())))
+        .and(p)
+        .map(|(_, output)| output)
+        .map(|output| dbg!(output))
 }

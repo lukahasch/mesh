@@ -1,3 +1,4 @@
+use ariadne::{Cache, Color, Label, Report, ReportKind, sources};
 use nom::error::{ErrorKind, FromExternalError, ParseError};
 
 use crate::{Span, parser::lib::Source};
@@ -65,5 +66,67 @@ impl<'a> ParseError<Source<'a>> for Error<'a> {
 impl<'a> FromExternalError<Source<'_>, Error<'a>> for Error<'a> {
     fn from_external_error(input: Source<'_>, kind: nom::error::ErrorKind, e: Self) -> Self {
         e
+    }
+}
+
+impl<'a> Error<'a> {
+    pub fn span(&self) -> Span {
+        match self {
+            Self::Debug(span, _) => span.clone(),
+            Self::InternalKind(span, _) => span.clone(),
+            Self::InternalChar(span, _) => span.clone(),
+            Self::InvalidLiteral { position, .. } => position.clone(),
+            Self::Or(errors) => errors
+                .iter()
+                .fold(Span::default(), |span, error| span + error.span()),
+            Self::Multi(errors) => errors
+                .iter()
+                .fold(Span::default(), |span, error| span + error.span()),
+            Self::KeywordAsIdentifier(source) => source.span(),
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Self::Debug(_, message) => message.to_string(),
+            Self::InternalKind(_, kind) => format!("Internal error: {:?}", kind),
+            Self::InternalChar(_, c) => format!("Internal error: {:?}", c),
+            Self::InvalidLiteral { problem, .. } => format!("Invalid literal: {}", problem),
+            Self::Or(errors) => errors
+                .iter()
+                .map(Error::message)
+                .collect::<Vec<_>>()
+                .join(", "),
+            Self::Multi(errors) => errors
+                .iter()
+                .map(Error::message)
+                .collect::<Vec<_>>()
+                .join(", "),
+            Self::KeywordAsIdentifier(_) => "Keyword used as identifier".to_string(),
+        }
+    }
+
+    pub fn code(&self) -> u32 {
+        // SAFETY: Because `Self` is marked `repr(u32)`, its layout is a `repr(C)` `union`
+        // between `repr(C)` structs, each of which has the `u8` discriminant as its first
+        // field, so we can read the discriminant without offsetting the pointer.
+        unsafe { *<*const _>::from(self).cast::<u32>() }
+    }
+
+    pub fn report(&self) -> Report<'_, Span> {
+        Report::build(ReportKind::Error, self.span())
+            .with_message(self.message())
+            .with_code(self.code())
+            .with_label(
+                Label::new(self.span())
+                    .with_color(Color::Red)
+                    .with_message(self.message()),
+            )
+            .finish()
+    }
+
+    pub fn cache(&self) -> impl Cache<&'static str> {
+        let contents = std::fs::read_to_string(self.span().file).unwrap();
+        sources(vec![(self.span().file, contents)])
     }
 }
