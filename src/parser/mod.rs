@@ -447,6 +447,7 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
         tag(")"),
     ))
     .parse(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
     let (source, _) = ws(tag(":")).parse(source)?;
     let (source, _) = boundary.parse(source)?;
     let (source, _) = begin_block.parse(source)?;
@@ -469,6 +470,7 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
                     .map(|(name, _, r#type)| (name.as_str(), r#type))
                     .collect(),
                 body,
+                r#where: r#where.map(Box::new),
             },
         },
     ))
@@ -484,6 +486,7 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
         tag(")"),
     ))
     .parse(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
     let (source, _) = ws(tag(":")).parse(source)?;
     let (source, _) = boundary.parse(source)?;
     let (source, _) = begin_block.parse(source)?;
@@ -516,6 +519,46 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
                     .map(|(name, fields)| (name.as_str(), fields.unwrap_or_default()))
                     .collect(),
                 body,
+                r#where: r#where.map(Box::new),
+            },
+        },
+    ))
+}
+
+pub fn interface<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
+    let begin = source.current();
+    let (source, _) = tag("interface")(source)?;
+    let (source, name) = ws(identifier).parse(source)?;
+    let (source, generics) = opt(delimited(
+        tag("("),
+        separated_list0(tag(","), pattern),
+        tag(")"),
+    ))
+    .parse(source)?;
+    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse(source)?;
+    let (source, _) = ws(tag(":")).parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, _) = begin_block.parse(source)?;
+    let (source, fields) =
+        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse(source)?;
+    let (source, _) = boundary.parse(source)?;
+    let (source, body) = program.parse(source)?;
+    let (source, _) = end_block.parse(source)?;
+    let end = source.current();
+    Ok((
+        source,
+        Node {
+            tag: (),
+            span: begin + end,
+            expression: Expression::Interface {
+                name: name.as_str(),
+                generics: generics.unwrap_or_default(),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, _, r#type)| (name.as_str(), r#type))
+                    .collect(),
+                body,
+                r#where: r#where.map(Box::new),
             },
         },
     ))
@@ -1204,6 +1247,7 @@ mod tests {
             expression: Expression::Struct {
                 name: "Point",
                 generics: vec![],
+                r#where: None,
                 fields: vec![
                     (
                         "x",
@@ -1296,6 +1340,7 @@ mod tests {
                     name: "T",
                     r#type: None,
                 }],
+                r#where: None,
                 variants: vec![
                     ("None", vec![]),
                     (
@@ -1380,6 +1425,23 @@ mod tests {
         };
         assert_eq!(
             expression.parse_complete(source),
+            Ok((source.eof(), expected))
+        );
+    }
+
+    #[test]
+    fn test_interface() {
+        let source = Source::new(
+            "test",
+            "interface Add(Other) where 10:\n    field: i32\n    fn add(self: Self, other: Other) -> Self",
+        );
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 79),
+            expression: Expression::Integer(0),
+        };
+        assert_eq!(
+            r#interface.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }

@@ -79,18 +79,21 @@ pub enum Expression<'a, Tag> {
         generics: Parameters<'a, Tag>,
         fields: Fields<'a, Tag>,
         body: Vec<Node<'a, Tag>>,
+        r#where: Option<Box<Node<'a, Tag>>>,
     },
     Enum {
         name: &'a str,
         generics: Parameters<'a, Tag>,
         variants: Vec<Variant<'a, Tag>>,
         body: Vec<Node<'a, Tag>>,
+        r#where: Option<Box<Node<'a, Tag>>>,
     },
     Interface {
         name: &'a str,
         generics: Parameters<'a, Tag>,
         fields: Fields<'a, Tag>,
         body: Vec<Node<'a, Tag>>,
+        r#where: Option<Box<Node<'a, Tag>>>,
     },
     Implementation {
         generics: Parameters<'a, Tag>,
@@ -98,6 +101,7 @@ pub enum Expression<'a, Tag> {
         interface: Box<Node<'a, Tag>>,
         fields: Fields<'a, Tag>,
         body: Vec<Node<'a, Tag>>,
+        r#where: Option<Box<Node<'a, Tag>>>,
     },
 
     Access {
