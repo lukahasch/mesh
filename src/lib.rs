@@ -33,6 +33,10 @@ pub enum Expression<'a, Tag> {
     Boolean(bool),
     Variable(&'a str),
     List(List<'a, Tag>),
+    StructConstruction {
+        r#type: Box<Node<'a, Tag>>,
+        fields: Map<&'a str, Node<'a, Tag>>,
+    },
 
     Block(Vec<Node<'a, Tag>>),
     If {
@@ -108,6 +112,8 @@ pub enum Expression<'a, Tag> {
         object: Box<Node<'a, Tag>>,
         field: &'a str,
     },
+    Reference(Box<Node<'a, Tag>>),
+    Dereference(Box<Node<'a, Tag>>),
 
     Comment(&'a str),
 }
@@ -128,6 +134,9 @@ pub enum Pattern<'a, Tag> {
 
     Ignore,
     Rest(Option<&'a str>),
+
+    Dereference(Box<Pattern<'a, Tag>>),
+    Reference(Box<Pattern<'a, Tag>>),
 }
 
 impl<'a> Node<'a, ()> {

@@ -1,2 +1,4 @@
-let input = "example.mesh";
-if less(input, 10) then print(input) else print("Input too long");
+fn map(O2)(f: fn(_: O) -> O2) -> Option(O2):
+    match self with
+        Some(value) => Some(f(value))
+        None => None

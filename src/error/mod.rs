@@ -10,10 +10,26 @@ pub enum Error<'a> {
     Debug(Span, &'a str) = 0,
     InternalKind(Span, ErrorKind) = 1,
     InternalChar(Span, char) = 2,
-    InvalidLiteral { position: Span, problem: String } = 3,
-    Or(Vec<Error<'a>>) = 4,
-    Multi(Vec<Error<'a>>) = 5,
+    InvalidLiteral {
+        position: Span,
+        problem: String,
+    } = 3,
     KeywordAsIdentifier(Source<'a>) = 6,
+    ExpectedFound {
+        span: Span,
+        expected: &'static str,
+        found: Source<'a>,
+    } = 7,
+    UnterminatedString(Span) = 8,
+    ExpectedOpeningParenthesis(Span, char) = 9,
+    MatchingClosingParenthesisNotFound {
+        opening: Span,
+        open: char,
+        close: char,
+        end: Span,
+    } = 10,
+    ExpectedEof(Span) = 11,
+    UnexpectedEof(Span) = 12,
 }
 
 impl<'a> ParseError<Source<'a>> for Error<'a> {
@@ -26,40 +42,11 @@ impl<'a> ParseError<Source<'a>> for Error<'a> {
     }
 
     fn or(self, other: Self) -> Self {
-        match (self, other) {
-            (Self::Or(mut errors), Self::Or(mut other_errors)) => {
-                errors.append(&mut other_errors);
-                Self::Or(errors)
-            }
-            (Self::Or(mut errors), other) => {
-                errors.push(other);
-                Self::Or(errors)
-            }
-            (s, Self::Or(mut errors)) => {
-                errors.push(s);
-                Self::Or(errors)
-            }
-            (s, other) => Self::Or(vec![s, other]),
-        }
+        self
     }
 
     fn append(input: Source<'a>, kind: nom::error::ErrorKind, other: Self) -> Self {
-        let error = Self::from_error_kind(input, kind);
-        match (error, other) {
-            (Self::Multi(mut errors), Self::Multi(mut other_errors)) => {
-                errors.append(&mut other_errors);
-                Self::Multi(errors)
-            }
-            (Self::Multi(mut errors), other) => {
-                errors.push(other);
-                Self::Multi(errors)
-            }
-            (error, Self::Multi(mut errors)) => {
-                errors.push(error);
-                Self::Multi(errors)
-            }
-            (error, other) => Self::Multi(vec![error, other]),
-        }
+        other
     }
 }
 
@@ -70,27 +57,28 @@ impl<'a> FromExternalError<Source<'_>, Error<'a>> for Error<'a> {
 }
 
 impl<'a> Error<'a> {
+    pub fn replaceable(&self) -> bool {
+        match self {
+            Self::Debug(_, _) => true,
+            Self::InternalKind(_, _) => true,
+            Self::InternalChar(_, _) => true,
+            _ => false,
+        }
+    }
+
     pub fn span(&self) -> Span {
         match self {
             Self::Debug(span, _) => span.clone(),
             Self::InternalKind(span, _) => span.clone(),
             Self::InternalChar(span, _) => span.clone(),
             Self::InvalidLiteral { position, .. } => position.clone(),
-            Self::Or(errors) => {
-                let first = errors.first().unwrap().span();
-                errors
-                    .iter()
-                    .skip(1)
-                    .fold(first, |span, error| span + error.span())
-            }
-            Self::Multi(errors) => {
-                let first = errors.first().unwrap().span();
-                errors
-                    .iter()
-                    .skip(1)
-                    .fold(first, |span, error| span + error.span())
-            }
             Self::KeywordAsIdentifier(source) => source.span(),
+            Self::ExpectedFound { span, .. } => span.clone(),
+            Self::UnterminatedString(span) => span.clone(),
+            Self::ExpectedOpeningParenthesis(span, _) => span.clone(),
+            Self::MatchingClosingParenthesisNotFound { opening, end, .. } => opening.clone() + end,
+            Self::ExpectedEof(span) => span.clone(),
+            Self::UnexpectedEof(span) => span.clone(),
         }
     }
 
@@ -100,17 +88,24 @@ impl<'a> Error<'a> {
             Self::InternalKind(_, kind) => format!("Internal error: {:?}", kind),
             Self::InternalChar(_, c) => format!("Internal error: {:?}", c),
             Self::InvalidLiteral { problem, .. } => format!("Invalid literal: {}", problem),
-            Self::Or(errors) => errors
-                .iter()
-                .map(Error::message)
-                .collect::<Vec<_>>()
-                .join(", "),
-            Self::Multi(errors) => errors
-                .iter()
-                .map(Error::message)
-                .collect::<Vec<_>>()
-                .join(", "),
             Self::KeywordAsIdentifier(_) => "Keyword used as identifier".to_string(),
+            Self::ExpectedFound {
+                expected, found, ..
+            } => {
+                format!("Expected {}, found '{}'", expected, found.as_str())
+            }
+            Self::UnterminatedString { .. } => "Unterminated string".to_string(),
+            Self::ExpectedOpeningParenthesis(_, kind) => {
+                format!("Expected opening parenthesis '{}'", kind)
+            }
+            Self::MatchingClosingParenthesisNotFound { open, close, .. } => {
+                format!(
+                    "Matching closing parenthesis '{}' not found for '{}'",
+                    close, open
+                )
+            }
+            Self::ExpectedEof(_) => "Expected end of file".to_string(),
+            Self::UnexpectedEof(_) => "Unexpected end of file".to_string(),
         }
     }
 

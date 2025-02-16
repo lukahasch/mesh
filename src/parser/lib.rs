@@ -4,9 +4,14 @@ use crate::{Span, error::Error};
 use nom::{
     Compare, IResult, Input, Needed, Parser,
     branch::alt,
-    bytes::complete::{tag, take_while},
-    combinator::value,
-    multi::count,
+    bytes::{
+        complete::{tag, take_while},
+        take_while1,
+    },
+    character::one_of,
+    combinator::{eof, value},
+    error::ParseError,
+    multi::{count, many0},
 };
 
 #[derive(Debug, Clone, PartialEq, Copy)]
@@ -228,4 +233,306 @@ where
     (|debug_source| Ok((dbg!(debug_source), ())))
         .and(p)
         .map(|(_, debug_output)| dbg!(debug_output))
+}
+
+pub trait IgnoreAnd<'a>: Parser<Source<'a>> {
+    fn ignore_and<P: Parser<Source<'a>, Error = <Self as Parser<Source<'a>>>::Error>>(
+        self,
+        parser: P,
+    ) -> impl Parser<Source<'a>, Output = P::Output, Error = <Self as Parser<Source<'a>>>::Error>;
+
+    fn and_ignore<P: Parser<Source<'a>, Error = <Self as Parser<Source<'a>>>::Error>>(
+        self,
+        parser: P,
+    ) -> impl Parser<
+        Source<'a>,
+        Output = <Self as Parser<Source<'a>>>::Output,
+        Error = <Self as Parser<Source<'a>>>::Error,
+    >;
+}
+
+/// return a singular word, this means either an identifier, the string of symbols or a space
+pub fn word<'a>(source: Source<'a>) -> IResult<Source<'a>, Source<'a>, Error<'a>> {
+    take_while1(|c: char| c.is_alphanumeric() || c == '_')
+        .or(tag("\n").or(tag(" ").or(tag("\t")).or(tag(";"))))
+        .or(take_while1(|c: char| {
+            !(c.is_alphanumeric() || c == '_') && !c.is_whitespace()
+        }))
+        .parse_complete(source)
+}
+
+impl<'a, T> IgnoreAnd<'a> for T
+where
+    T: Parser<Source<'a>>,
+{
+    fn ignore_and<P: Parser<Source<'a>, Error = <Self as Parser<Source<'a>>>::Error>>(
+        self,
+        parser: P,
+    ) -> impl Parser<Source<'a>, Output = P::Output, Error = <Self as Parser<Source<'a>>>::Error>
+    {
+        self.and(parser).map(|(_, output)| output)
+    }
+
+    fn and_ignore<P: Parser<Source<'a>, Error = <Self as Parser<Source<'a>>>::Error>>(
+        self,
+        parser: P,
+    ) -> impl Parser<
+        Source<'a>,
+        Output = <Self as Parser<Source<'a>>>::Output,
+        Error = <Self as Parser<Source<'a>>>::Error,
+    > {
+        self.and(parser).map(|(output, _)| output)
+    }
+}
+
+pub trait Extensions<'a>: Parser<Source<'a>> {
+    fn map_err<F, E>(
+        self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>) -> nom::Err<E>,
+        E: ParseError<Source<'a>>;
+
+    fn map_span<F, O>(
+        self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = O, Error = <Self as Parser<Source<'a>>>::Error>
+    where
+        F: Fn(Span, <Self as Parser<Source<'a>>>::Output) -> O;
+
+    fn map_err_word<F, E>(
+        self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>, Source<'a>) -> nom::Err<E>,
+        E: ParseError<Source<'a>>,
+        Error<'a>: Into<E>;
+
+    fn map_err_span<F, E>(
+        self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>, Span) -> nom::Err<E>,
+        E: ParseError<Source<'a>>;
+
+    fn map_failure_span<F>(
+        self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = Self::Error>
+    where
+        F: FnMut(<Self as Parser<Source<'a>>>::Error, Span) -> nom::Err<Self::Error>;
+}
+
+impl<'a, T> Extensions<'a> for T
+where
+    T: Parser<Source<'a>>,
+{
+    fn map_err<F, E>(
+        mut self,
+        mut f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>) -> nom::Err<E>,
+        E: ParseError<Source<'a>>,
+    {
+        move |source| self.parse_complete(source).map_err(|e| f(e))
+    }
+
+    fn map_span<F, O>(
+        mut self,
+        f: F,
+    ) -> impl Parser<Source<'a>, Output = O, Error = <Self as Parser<Source<'a>>>::Error>
+    where
+        F: Fn(Span, <Self as Parser<Source<'a>>>::Output) -> O,
+    {
+        move |source| {
+            let (s2, output) = self.parse_complete(source)?;
+            Ok((s2, f(source.current() + s2.current(), output)))
+        }
+    }
+
+    fn map_err_word<F, E>(
+        mut self,
+        mut f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>, Source<'a>) -> nom::Err<E>,
+        E: ParseError<Source<'a>>,
+        Error<'a>: Into<E>,
+    {
+        move |source: Source<'a>| {
+            let output = self.parse_complete(source);
+            match output {
+                Ok((s, o)) => Ok((s, o)),
+                Err(e) => Err(f(
+                    e,
+                    ws(word)
+                        .parse_complete(source)
+                        .map_err(|e| match e {
+                            nom::Err::Error(e) => nom::Err::Error(e.into()),
+                            nom::Err::Failure(e) => nom::Err::Failure(e.into()),
+                            nom::Err::Incomplete(n) => nom::Err::Incomplete(n),
+                        })?
+                        .1,
+                )),
+            }
+        }
+    }
+
+    fn map_err_span<F, E>(
+        mut self,
+        mut f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = E>
+    where
+        F: FnMut(nom::Err<<Self as Parser<Source<'a>>>::Error>, Span) -> nom::Err<E>,
+        E: ParseError<Source<'a>>,
+    {
+        move |source: Source<'a>| {
+            let output = self.parse_complete(source);
+            match output {
+                Ok((s, o)) => Ok((s, o)),
+                Err(e) => Err(f(e, source.current())),
+            }
+        }
+    }
+
+    fn map_failure_span<F>(
+        mut self,
+        mut f: F,
+    ) -> impl Parser<Source<'a>, Output = <Self as Parser<Source<'a>>>::Output, Error = Self::Error>
+    where
+        F: FnMut(<Self as Parser<Source<'a>>>::Error, Span) -> nom::Err<Self::Error>,
+    {
+        move |source: Source<'a>| {
+            let output = self.parse_complete(source);
+            match output {
+                Ok((s, o)) => Ok((s, o)),
+                Err(nom::Err::Failure(e)) => Err(f(e, source.current())),
+                Err(e) => Err(e),
+            }
+        }
+    }
+}
+
+pub trait Inner {
+    type E;
+    fn inner(self) -> Self::E;
+    fn inner_ref(&self) -> &Self::E;
+}
+
+impl<E> Inner for nom::Err<E> {
+    type E = E;
+    fn inner(self) -> E {
+        match self {
+            nom::Err::Error(e) => e,
+            nom::Err::Failure(e) => e,
+            nom::Err::Incomplete(_) => unreachable!(),
+        }
+    }
+
+    fn inner_ref(&self) -> &E {
+        match self {
+            nom::Err::Error(e) => e,
+            nom::Err::Failure(e) => e,
+            nom::Err::Incomplete(_) => unreachable!(),
+        }
+    }
+}
+
+pub fn surrounded<'a, P: Parser<Source<'a>, Error = Error<'a>>>(
+    before: char,
+    mut p: P,
+    after: char,
+) -> impl Parser<Source<'a>, Output = P::Output, Error = Error<'a>> {
+    move |source: Source<'a>| {
+        let mut buf = [0u8; 4];
+        let before_s: &str = before.encode_utf8(&mut buf);
+        let mut find = match ws(tag::<_, Source, Error>(before_s)).parse_complete(source) {
+            Ok((s, _)) => s,
+            Err(e) => {
+                return Err(nom::Err::Error(Error::ExpectedOpeningParenthesis(
+                    e.inner().span(),
+                    before,
+                )));
+            }
+        };
+        let start = find;
+        let mut count = 1;
+        while count > 0 {
+            let before_pos = find.position(|c| c == before);
+            let after_pos = find.position(|c| c == after);
+            if after_pos.is_none() {
+                return Err(nom::Err::Failure(
+                    Error::MatchingClosingParenthesisNotFound {
+                        opening: source.current(),
+                        open: before,
+                        close: after,
+                        end: find.current(),
+                    },
+                ));
+            }
+            if before_pos.is_none() || before_pos.unwrap() > after_pos.unwrap() {
+                count -= 1;
+                find = find.take_from(after_pos.unwrap() + 1);
+            } else {
+                count += 1;
+                find = find.take_from(before_pos.unwrap() + 1);
+            }
+        }
+        let source = start.take(find.offset() - start.offset() - 1);
+        let (source, output) = p.parse_complete(source)?;
+        if many0(one_of("\n; \t"))
+            .and(eof::<Source, Error>)
+            .parse_complete(source)
+            .is_err()
+        {
+            return Err(nom::Err::Error(Error::ExpectedEof(source.span())));
+        }
+        Ok((find, output))
+    }
+}
+
+pub trait ReplaceError<'a, E>: Parser<Source<'a>, Error = Error<'a>> {
+    fn replace_error(
+        self,
+        error: impl FnMut(Error<'a>) -> nom::Err<E>,
+    ) -> impl Parser<Source<'a>, Output = Self::Output, Error = E>;
+
+    fn replace_error_word(
+        self,
+        error: impl FnMut(Error<'a>, Source<'a>) -> nom::Err<E>,
+    ) -> impl Parser<Source<'a>, Output = Self::Output, Error = E>;
+}
+
+impl<'a, P: Parser<Source<'a>, Error = Error<'a>, Output = O>, O> ReplaceError<'a, Error<'a>>
+    for P
+{
+    fn replace_error(
+        self,
+        mut error: impl FnMut(Error<'a>) -> nom::Err<Error<'a>>,
+    ) -> impl Parser<Source<'a>, Output = Self::Output, Error = Error<'a>> {
+        self.map_err(move |e| {
+            if e.inner_ref().replaceable() {
+                error(e.inner())
+            } else {
+                e
+            }
+        })
+    }
+
+    fn replace_error_word(
+        self,
+        mut error: impl FnMut(Error<'a>, Source<'a>) -> nom::Err<Error<'a>>,
+    ) -> impl Parser<Source<'a>, Output = Self::Output, Error = Error<'a>> {
+        self.map_err_word(move |e, s| {
+            if e.inner_ref().replaceable() {
+                error(e.inner(), s)
+            } else {
+                e
+            }
+        })
+    }
 }
