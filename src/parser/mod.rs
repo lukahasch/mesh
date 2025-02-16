@@ -319,7 +319,6 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
         None => (Vec::new(), first_params),
     };
 
-    // Record the ending position.
     let end = source.current();
 
     let function_expr = Expression::Function {

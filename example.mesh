@@ -1,4 +1,4 @@
-fn map(O2)(f: fn(_: O) -> O2) -> Option(O2):
+fn map(O2)(f: fn(_: ) -> O2) -> Option(O2):
     match self with
         Some(value) => Some(f(value))
         None => None
