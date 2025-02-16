@@ -1,1 +1,2 @@
-print("test")
+let input = "example.mesh";
+if less(input, 10) then print(input) else print("Input too long");

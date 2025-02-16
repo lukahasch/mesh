@@ -3,6 +3,7 @@ use nom::{
     IResult, Input, Parser,
     branch::alt,
     bytes::complete::{tag, take_while, take_while1},
+    character::complete::one_of,
     combinator::{eof, fail, opt, peek},
     multi::{many0, separated_list0},
     sequence::{delimited, preceded},
@@ -653,7 +654,7 @@ pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, E
         fail(),
         alt((
             unary_op(
-                1,
+                0,
                 (ws(tag(".")), ws(identifier))
                     .map(|(_, identifier)| Operator::Access(identifier.as_str())),
             ),
@@ -696,7 +697,8 @@ pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, E
 
 /// consume all empty lines but stop before the \n of the last empty line
 pub fn empty_lines<T>(mut source: Source) -> IResult<Source, Option<T>, Error> {
-    while let Ok((s, _)) = ws(tag::<&str, Source, Error>("\n")).parse_complete(source) {
+    while let Ok((s, _)) = ws(tag::<&str, Source, Error>("\n").or(tag(";"))).parse_complete(source)
+    {
         source = s;
     }
     Ok((source.back(1), None))
@@ -716,7 +718,7 @@ pub fn program(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
 
 pub fn parser(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
     program
-        .and(empty_lines::<()>.and(tag("\n")))
+        .and(many0(one_of("\n; \t")))
         .and(eof)
         .map(|((a, _), _)| a)
         .parse_complete(source)

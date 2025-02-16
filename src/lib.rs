@@ -7,7 +7,7 @@ pub mod error;
 pub mod fmt;
 pub mod parser;
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
     pub file: &'static str,
     pub range: Range<usize>,
@@ -160,8 +160,10 @@ impl<'a> Add<&'a Span> for Span {
                 self.file
             } else if self.file.is_empty() {
                 other.file
+            } else if other.file.is_empty() {
+                self.file
             } else {
-                panic!("tried adding spans from differing files")
+                "mixed"
             },
             range: self.range.start.min(other.range.start)..other.range.end.max(self.range.end),
         }

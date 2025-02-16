@@ -225,8 +225,7 @@ pub fn debug<'a, P: Parser<Source<'a>>>(
 where
     P::Output: std::fmt::Debug,
 {
-    (|source| Ok((dbg!(source), ())))
+    (|debug_source| Ok((dbg!(debug_source), ())))
         .and(p)
-        .map(|(_, output)| output)
-        .map(|output| dbg!(output))
+        .map(|(_, debug_output)| dbg!(debug_output))
 }

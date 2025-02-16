@@ -76,12 +76,20 @@ impl<'a> Error<'a> {
             Self::InternalKind(span, _) => span.clone(),
             Self::InternalChar(span, _) => span.clone(),
             Self::InvalidLiteral { position, .. } => position.clone(),
-            Self::Or(errors) => errors
-                .iter()
-                .fold(Span::default(), |span, error| span + error.span()),
-            Self::Multi(errors) => errors
-                .iter()
-                .fold(Span::default(), |span, error| span + error.span()),
+            Self::Or(errors) => {
+                let first = errors.first().unwrap().span();
+                errors
+                    .iter()
+                    .skip(1)
+                    .fold(first, |span, error| span + error.span())
+            }
+            Self::Multi(errors) => {
+                let first = errors.first().unwrap().span();
+                errors
+                    .iter()
+                    .skip(1)
+                    .fold(first, |span, error| span + error.span())
+            }
             Self::KeywordAsIdentifier(source) => source.span(),
         }
     }
@@ -126,6 +134,10 @@ impl<'a> Error<'a> {
     }
 
     pub fn cache(&self) -> impl Cache<&'static str> {
+        if self.span().file.is_empty() {
+            dbg!(self);
+            dbg!(self.span());
+        }
         let contents = std::fs::read_to_string(self.span().file).unwrap();
         sources(vec![(self.span().file, contents)])
     }
