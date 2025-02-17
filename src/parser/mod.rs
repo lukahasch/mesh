@@ -15,9 +15,15 @@ use nom_language::precedence::{Operation, precedence, unary_op};
 use smallmap::Map;
 use std::num::{ParseFloatError, ParseIntError};
 
-use crate::{Expression, Node, Pattern, error::Error};
+use crate::{Expression, Fields, Node, Pattern, error::Error};
 
 pub mod lib;
+pub mod pattern;
+pub mod simple;
+
+use lib::*;
+use pattern::*;
+use simple::*;
 
 pub const KEYWORDS: [&str; 14] = [
     "fn",
@@ -35,252 +41,6 @@ pub const KEYWORDS: [&str; 14] = [
     "interface",
     "impl",
 ];
-
-pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
-    if Some(true) == source.char().map(|c| c.is_ascii_alphabetic() || c == '_') {
-        let (a, b) =
-            source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
-        if KEYWORDS.contains(&b.as_str()) {
-            Err(nom::Err::Error(Error::KeywordAsIdentifier(a)))
-        } else {
-            Ok((a, b))
-        }
-    } else {
-        Err(nom::Err::Error(Error::ExpectedFound {
-            span: source.current(),
-            expected: "identifier",
-            found: word(source)?.1,
-        }))
-    }
-}
-
-pub fn comment(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    tag("//")
-        .ignore_and(take_while(|c| c != '\n'))
-        .map_span(|span, source| Node {
-            tag: (),
-            span,
-            expression: Expression::Comment(source.as_str()),
-        })
-        .parse_complete(source)
-}
-
-pub fn number(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    take_while1(|c: char| c.is_numeric() || c == '.')
-        .map_res(|source: Source| {
-            Ok(Node {
-                tag: (),
-                span: source.span(),
-                expression: if source.contains('.') {
-                    Expression::Float(source.as_str().parse().map_err(|e: ParseFloatError| {
-                        Error::InvalidLiteral {
-                            position: source.span(),
-                            problem: e.to_string(),
-                        }
-                    })?)
-                } else {
-                    Expression::Integer(source.as_str().parse().map_err(|e: ParseIntError| {
-                        Error::InvalidLiteral {
-                            position: source.span(),
-                            problem: e.to_string(),
-                        }
-                    })?)
-                },
-            })
-        })
-        .parse_complete(source)
-}
-
-pub fn string(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    tag::<_, Source, _>("\"")
-        .ignore_and(take_while(|c: char| c != '"'))
-        .and_ignore(cut(tag("\"")))
-        .map_failure_span(|e: Error, span| Err::Failure(Error::UnterminatedString(e.span() + span)))
-        .map_span(|span, source| Node {
-            tag: (),
-            span,
-            expression: Expression::String(source.as_str()),
-        })
-        .parse_complete(source)
-}
-
-pub fn boolean(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    alt((
-        tag("true").map(|source: Source| Node {
-            tag: (),
-            span: source.span(),
-            expression: Expression::Boolean(true),
-        }),
-        tag("false").map(|source: Source| Node {
-            tag: (),
-            span: source.span(),
-            expression: Expression::Boolean(false),
-        }),
-    ))
-    .parse_complete(source)
-}
-
-pub fn variable(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    identifier
-        .map(|source: Source| Node {
-            tag: (),
-            span: source.span(),
-            expression: Expression::Variable(source.as_str()),
-        })
-        .parse_complete(source)
-}
-
-pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    surrounded('[', cut(separated_list0(tag(","), expression)), ']')
-        .map_span(|span, list| Node {
-            tag: (),
-            span,
-            expression: Expression::List(list),
-        })
-        .parse_complete(source)
-}
-
-pub fn block(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    begin_block
-        .and(cut(program))
-        .and(cut(end_block))
-        .map_span(|span, ((_, nodes), _)| Node {
-            tag: (),
-            span,
-            expression: Expression::Block(nodes),
-        })
-        .parse_complete(source)
-}
-
-pub fn ignore(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    tag("_")
-        .map(|_: Source| Pattern::Ignore)
-        .parse_complete(source)
-}
-
-pub fn rest(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    tag("..")
-        .and(opt(identifier))
-        .map(|(_, source)| Pattern::Rest(source.map(|source| source.as_str())))
-        .parse_complete(source)
-}
-
-pub fn number_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    number
-        .map(|node| match node.expression {
-            Expression::Integer(i) => Pattern::Integer(i),
-            Expression::Float(f) => Pattern::Float(f),
-            _ => unreachable!(),
-        })
-        .parse_complete(source)
-}
-
-pub fn string_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    string
-        .map(|node| match node.expression {
-            Expression::String(s) => Pattern::String(s),
-            _ => unreachable!(),
-        })
-        .parse_complete(source)
-}
-
-pub fn boolean_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    boolean
-        .map(|node| match node.expression {
-            Expression::Boolean(b) => Pattern::Boolean(b),
-            _ => unreachable!(),
-        })
-        .parse_complete(source)
-}
-
-pub fn capture(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    identifier
-        .and(opt(preceded(ws(tag(":")), cut(expression))))
-        .map(|(source, r#type)| Pattern::Capture {
-            name: source.as_str(),
-            r#type: r#type.map(Box::new),
-        })
-        .parse_complete(source)
-}
-
-pub fn list_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    surrounded('[', cut(separated_list0(tag(","), pattern)), ']')
-        .map(Pattern::List)
-        .parse_complete(source)
-}
-
-pub fn destructure(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    opt(surrounded('(', cut(expression), ')'))
-        .and(surrounded(
-            '{',
-            cut(separated_list0(
-                ws(tag(",")),
-                (ws(identifier), ws(tag(":")), cut(pattern)),
-            )),
-            '}',
-        ))
-        .map(|(r#type, fields)| Pattern::Destructure {
-            r#type: r#type.map(Box::new),
-            fields: fields
-                .into_iter()
-                .map(|(identifier, _, pattern)| (identifier.as_str(), pattern))
-                .collect(),
-        })
-        .parse_complete(source)
-}
-
-pub fn variant(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    identifier
-        .and(surrounded(
-            '(',
-            cut(separated_list0(tag(","), pattern)),
-            ')',
-        ))
-        .map(|(source, fields)| Pattern::Variant {
-            name: source.as_str(),
-            fields,
-        })
-        .parse_complete(source)
-}
-
-pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    let primary = |source| {
-        ws(alt((
-            rest,
-            number_pattern,
-            string_pattern,
-            boolean_pattern,
-            variant,
-            capture,
-            list_pattern,
-            destructure,
-            ignore,
-            surrounded('(', cut(pattern), ')'),
-        )))
-        .parse_complete(source)
-    };
-    enum Operator {
-        Dereference,
-        Reference,
-    }
-    precedence(
-        alt((
-            unary_op(3, ws(tag("*")).map(|_| Operator::Dereference)),
-            unary_op(3, ws(tag("&")).map(|_| Operator::Reference)),
-        )),
-        fail(),
-        fail(),
-        primary,
-        |op: Operation<Operator, (), (), Pattern<'_, ()>>| match op {
-            Operation::Prefix(Operator::Dereference, arg) => {
-                Ok(Pattern::Dereference(Box::new(arg)))
-            }
-            Operation::Prefix(Operator::Reference, arg) => Ok(Pattern::Reference(Box::new(arg))),
-            _ => unreachable!(),
-        },
-    )
-    .parse_complete(source)
-}
 
 fn parse_parameter_list(source: Source) -> IResult<Source, Vec<Pattern<'_, ()>>, Error> {
     surrounded('(', cut(separated_list0(ws(tag(",")), pattern)), ')').parse_complete(source)
@@ -481,6 +241,14 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     ))
 }
 
+pub fn attribute(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
+    todo!()
+}
+
+pub fn fields(source: Source) -> IResult<Source, Fields<'_, ()>, Error> {
+    todo!()
+}
+
 pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> {
     let begin = source.current();
     let (source, _) = tag("struct")(source)?;
@@ -504,7 +272,10 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
             expression: Expression::Struct {
                 name: name.as_str(),
                 generics: generics.unwrap_or_default(),
-                fields: todo!(),
+                fields: fields
+                    .into_iter()
+                    .map(|(name, _, r#type)| (name.as_str(), r#type))
+                    .collect(),
                 body,
                 r#where: r#where.map(Box::new),
             },
@@ -1366,26 +1137,7 @@ mod tests {
                 name: "Point",
                 generics: vec![],
                 r#where: None,
-                fields: vec![
-                    (
-                        "x",
-                        Node {
-                            tag: (),
-                            span: Span::new("test", 21, 24),
-                            expression: Expression::Variable("i64"),
-                        },
-                    ),
-                    (
-                        "y",
-                        Node {
-                            tag: (),
-                            span: Span::new("test", 32, 35),
-                            expression: Expression::Variable("i64"),
-                        },
-                    ),
-                ]
-                .into_iter()
-                .collect(),
+                fields: vec![],
                 body: vec![Node {
                     tag: (),
                     span: Span::new("test", 40, 94),
@@ -1562,16 +1314,6 @@ mod tests {
                     name: "Other",
                     r#type: None,
                 }],
-                fields: vec![(
-                    "field",
-                    Node {
-                        tag: (),
-                        span: Span::new("test", 42, 45),
-                        expression: Expression::Variable("i32"),
-                    },
-                )]
-                .into_iter()
-                .collect(),
                 body: vec![Node {
                     tag: (),
                     span: Span::new("test", 50, 90),
@@ -1692,7 +1434,6 @@ mod tests {
                         ],
                     },
                 }),
-                fields: Map::new(),
                 body: vec![Node {
                     tag: (),
                     span: Span::new("test", 42, 60),

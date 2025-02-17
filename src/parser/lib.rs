@@ -547,3 +547,21 @@ impl<'a, P: Parser<Source<'a>, Error = Error<'a>, Output = O>, O> ReplaceError<'
         })
     }
 }
+
+pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
+    if Some(true) == source.char().map(|c| c.is_ascii_alphabetic() || c == '_') {
+        let (a, b) =
+            source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
+        if KEYWORDS.contains(&b.as_str()) {
+            Err(nom::Err::Error(Error::KeywordAsIdentifier(a)))
+        } else {
+            Ok((a, b))
+        }
+    } else {
+        Err(nom::Err::Error(Error::ExpectedFound {
+            span: source.current(),
+            expected: "identifier",
+            found: word(source)?.1,
+        }))
+    }
+}

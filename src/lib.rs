@@ -6,7 +6,6 @@ use std::ops::{Add, Range};
 pub mod error;
 pub mod fmt;
 pub mod parser;
-pub mod typing;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
