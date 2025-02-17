@@ -1,6 +1,6 @@
 use lib::{
     Extensions, IgnoreAnd, Inner, ReplaceError, Source, begin_block, boundary, debug, end_block,
-    surrounded, word, ws,
+    not_eof, surrounded, word, ws,
 };
 use nom::{
     Err, IResult, Input, Parser,
@@ -9,7 +9,7 @@ use nom::{
     character::complete::one_of,
     combinator::{cut, eof, fail, opt, peek},
     multi::{many0, separated_list0},
-    sequence::{delimited, preceded},
+    sequence::preceded,
 };
 use nom_language::precedence::{Operation, precedence, unary_op};
 use smallmap::Map;
@@ -283,12 +283,7 @@ pub fn pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
 }
 
 fn parse_parameter_list(source: Source) -> IResult<Source, Vec<Pattern<'_, ()>>, Error> {
-    delimited(
-        tag("("),
-        cut(separated_list0(ws(tag(",")), pattern)),
-        cut(tag(")")),
-    )
-    .parse_complete(source)
+    surrounded('(', cut(separated_list0(ws(tag(",")), pattern)), ')').parse_complete(source)
 }
 
 /// The function parser rewritten in a more functional style.
@@ -490,12 +485,8 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
     let begin = source.current();
     let (source, _) = tag("struct")(source)?;
     let (source, name) = ws(identifier).parse_complete(source)?;
-    let (source, generics) = opt(delimited(
-        tag("("),
-        separated_list0(tag(","), pattern),
-        tag(")"),
-    ))
-    .parse_complete(source)?;
+    let (source, generics) =
+        opt(surrounded('(', separated_list0(tag(","), pattern), ')')).parse_complete(source)?;
     let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
     let (source, _) = ws(tag(":")).parse_complete(source)?;
     let (source, _) = boundary.parse_complete(source)?;
@@ -513,10 +504,7 @@ pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> 
             expression: Expression::Struct {
                 name: name.as_str(),
                 generics: generics.unwrap_or_default(),
-                fields: fields
-                    .into_iter()
-                    .map(|(name, _, r#type)| (name.as_str(), r#type))
-                    .collect(),
+                fields: todo!(),
                 body,
                 r#where: r#where.map(Box::new),
             },
@@ -528,12 +516,8 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
     let begin = source.current();
     let (source, _) = tag("enum")(source)?;
     let (source, name) = ws(identifier).parse_complete(source)?;
-    let (source, generics) = opt(delimited(
-        tag("("),
-        separated_list0(tag(","), pattern),
-        tag(")"),
-    ))
-    .parse_complete(source)?;
+    let (source, generics) =
+        opt(surrounded('(', separated_list0(tag(","), pattern), ')')).parse_complete(source)?;
     let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
     let (source, _) = ws(tag(":")).parse_complete(source)?;
     let (source, _) = boundary.parse_complete(source)?;
@@ -542,11 +526,7 @@ pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error
         boundary,
         (
             identifier,
-            opt(delimited(
-                tag("("),
-                separated_list0(tag(","), expression),
-                tag(")"),
-            )),
+            opt(surrounded('(', separated_list0(tag(","), expression), ')')),
         ),
     )
     .parse_complete(source)?;
@@ -576,18 +556,12 @@ pub fn interface<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Er
     let begin = source.current();
     let (source, _) = tag("interface")(source)?;
     let (source, name) = ws(identifier).parse_complete(source)?;
-    let (source, generics) = opt(delimited(
-        tag("("),
-        separated_list0(tag(","), pattern),
-        tag(")"),
-    ))
-    .parse_complete(source)?;
+    let (source, generics) =
+        opt(surrounded('(', separated_list0(tag(","), pattern), ')')).parse_complete(source)?;
     let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
     let (source, _) = ws(tag(":")).parse_complete(source)?;
     let (source, _) = boundary.parse_complete(source)?;
     let (source, _) = begin_block.parse_complete(source)?;
-    let (source, fields) =
-        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
     let (source, body) = program.parse_complete(source)?;
     let (source, _) = end_block.parse_complete(source)?;
     let end = source.current();
@@ -599,10 +573,6 @@ pub fn interface<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Er
             expression: Expression::Interface {
                 name: name.as_str(),
                 generics: generics.unwrap_or_default(),
-                fields: fields
-                    .into_iter()
-                    .map(|(name, _, r#type)| (name.as_str(), r#type))
-                    .collect(),
                 body,
                 r#where: r#where.map(Box::new),
             },
@@ -614,12 +584,8 @@ pub fn implementation<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()
     // impl <generics> <interface> for <type> where <where>: <fields> <body>
     let begin = source.current();
     let (source, _) = tag("impl")(source)?;
-    let (source, generics) = opt(delimited(
-        tag("("),
-        separated_list0(tag(","), pattern),
-        tag(")"),
-    ))
-    .parse_complete(source)?;
+    let (source, generics) =
+        opt(surrounded('(', separated_list0(tag(","), pattern), ')')).parse_complete(source)?;
     let (source, interface) = expression.parse_complete(source)?;
     let (source, _) = ws(tag("for")).parse_complete(source)?;
     let (source, r#type) = expression.parse_complete(source)?;
@@ -627,8 +593,6 @@ pub fn implementation<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()
     let (source, _) = ws(tag(":")).parse_complete(source)?;
     let (source, _) = boundary.parse_complete(source)?;
     let (source, _) = begin_block.parse_complete(source)?;
-    let (source, fields) =
-        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
     let (source, body) = program.parse_complete(source)?;
     let (source, _) = end_block.parse_complete(source)?;
     let end = source.current();
@@ -641,10 +605,6 @@ pub fn implementation<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()
                 generics: generics.unwrap_or_default(),
                 interface: Box::new(interface),
                 r#type: Box::new(r#type),
-                fields: fields
-                    .into_iter()
-                    .map(|(name, _, r#type)| (name.as_str(), r#type))
-                    .collect(),
                 body,
                 r#where: r#where.map(Box::new),
             },
@@ -677,9 +637,7 @@ pub fn struct_construction<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'
 }
 
 pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
-    if source.input_len() == 0 {
-        return Err(Err::Error(Error::UnexpectedEof(source.span())));
-    }
+    not_eof(source)?;
     let primary = |source| {
         alt((
             block,

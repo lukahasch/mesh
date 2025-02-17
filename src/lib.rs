@@ -6,6 +6,7 @@ use std::ops::{Add, Range};
 pub mod error;
 pub mod fmt;
 pub mod parser;
+pub mod typing;
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct Span {
@@ -20,7 +21,14 @@ pub struct Node<'a, Tag> {
     pub expression: Expression<'a, Tag>,
 }
 
-pub type Fields<'a, Tag> = Map<&'a str, Node<'a, Tag>>;
+#[derive(Debug, Clone, PartialEq)]
+pub struct Field<'a, Tag> {
+    name: &'a str,
+    r#type: Box<Node<'a, Tag>>,
+    attributes: Vec<Node<'a, Tag>>,
+}
+
+pub type Fields<'a, Tag> = Vec<Field<'a, Tag>>;
 pub type Parameters<'a, Tag> = Vec<Pattern<'a, Tag>>;
 pub type List<'a, Tag> = Vec<Node<'a, Tag>>;
 pub type Variant<'a, Tag> = (&'a str, List<'a, Tag>);
@@ -95,7 +103,6 @@ pub enum Expression<'a, Tag> {
     Interface {
         name: &'a str,
         generics: Parameters<'a, Tag>,
-        fields: Fields<'a, Tag>,
         body: Vec<Node<'a, Tag>>,
         r#where: Option<Box<Node<'a, Tag>>>,
     },
@@ -103,7 +110,6 @@ pub enum Expression<'a, Tag> {
         generics: Parameters<'a, Tag>,
         r#type: Box<Node<'a, Tag>>,
         interface: Box<Node<'a, Tag>>,
-        fields: Fields<'a, Tag>,
         body: Vec<Node<'a, Tag>>,
         r#where: Option<Box<Node<'a, Tag>>>,
     },
@@ -114,6 +120,11 @@ pub enum Expression<'a, Tag> {
     },
     Reference(Box<Node<'a, Tag>>),
     Dereference(Box<Node<'a, Tag>>),
+
+    Attributed {
+        attributes: Vec<Node<'a, Tag>>,
+        expression: Box<Node<'a, Tag>>,
+    },
 
     Comment(&'a str),
 }

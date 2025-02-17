@@ -495,6 +495,17 @@ pub fn surrounded<'a, P: Parser<Source<'a>, Error = Error<'a>>>(
     }
 }
 
+pub fn not_eof<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error<'a>> {
+    if many0(one_of("\n; \t"))
+        .and(eof::<Source, Error>)
+        .parse_complete(source)
+        .is_ok()
+    {
+        return Err(nom::Err::Error(Error::UnexpectedEof(source.span())));
+    }
+    Ok((source, ()))
+}
+
 pub trait ReplaceError<'a, E>: Parser<Source<'a>, Error = Error<'a>> {
     fn replace_error(
         self,
