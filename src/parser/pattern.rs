@@ -1,8 +1,20 @@
-use nom::{IResult, Parser, bytes::tag, combinator::opt, number};
+use crate::{Expression, Pattern, error::Error};
+use nom::{
+    IResult, Parser,
+    branch::alt,
+    bytes::tag,
+    combinator::{cut, fail, opt},
+    multi::separated_list0,
+    number,
+    sequence::preceded,
+};
+use nom_language::precedence::{Operation, precedence, unary_op};
 
-use crate::{Pattern, error::Error};
-
-use super::lib::*;
+use super::{
+    expression,
+    lib::*,
+    simple::{boolean, string},
+};
 
 pub fn ignore(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     tag("_")
@@ -18,11 +30,13 @@ pub fn rest(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
 }
 
 pub fn number_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
-    number
-        .map(|node| match node.expression {
-            Expression::Integer(i) => Pattern::Integer(i),
-            Expression::Float(f) => Pattern::Float(f),
-            _ => unreachable!(),
+    number::recognize_float()
+        .map(|source: Source| {
+            if let Ok(f) = source.as_str().parse() {
+                Pattern::Integer(f)
+            } else {
+                Pattern::Float(source.as_str().parse().unwrap())
+            }
         })
         .parse_complete(source)
 }
@@ -47,7 +61,7 @@ pub fn boolean_pattern(source: Source) -> IResult<Source, Pattern<'_, ()>, Error
 
 pub fn capture(source: Source) -> IResult<Source, Pattern<'_, ()>, Error> {
     identifier
-        .and(opt(preceded(ws(tag(":")), cut(expression))))
+        .and(opt(preceded(ws(tag(":")), expression)))
         .map(|(source, r#type)| Pattern::Capture {
             name: source.as_str(),
             r#type: r#type.map(Box::new),

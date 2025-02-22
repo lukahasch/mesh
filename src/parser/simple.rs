@@ -1,3 +1,21 @@
+use std::num::{ParseFloatError, ParseIntError};
+
+use nom::{
+    Err, IResult, Parser,
+    branch::alt,
+    bytes::{tag, take_while, take_while1},
+    combinator::cut,
+    multi::separated_list0,
+};
+
+use crate::{Expression, Node, error::Error};
+
+use super::{
+    expression,
+    lib::{Extensions, IgnoreAnd, Source, begin_block, debug, end_block, identifier, surrounded},
+    program,
+};
+
 pub fn comment(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     tag("//")
         .ignore_and(take_while(|c| c != '\n'))
@@ -65,6 +83,7 @@ pub fn boolean(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn variable(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
+    dbg!("variabl", source);
     identifier
         .map(|source: Source| Node {
             tag: (),

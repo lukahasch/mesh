@@ -17,7 +17,7 @@ pub enum Error<'a> {
     KeywordAsIdentifier(Source<'a>) = 6,
     ExpectedFound {
         span: Span,
-        expected: &'static str,
+        expected: &'a str,
         found: Source<'a>,
     } = 7,
     UnterminatedString(Span) = 8,
@@ -30,6 +30,11 @@ pub enum Error<'a> {
     } = 10,
     ExpectedEof(Span) = 11,
     UnexpectedEof(Span) = 12,
+    ExpectedKeywordFound {
+        keyword: &'a str,
+        found: Source<'a>,
+    } = 13,
+    ExpectedIndent(Source<'a>) = 14,
 }
 
 impl<'a> ParseError<Source<'a>> for Error<'a> {
@@ -79,6 +84,8 @@ impl<'a> Error<'a> {
             Self::MatchingClosingParenthesisNotFound { opening, end, .. } => opening.clone() + end,
             Self::ExpectedEof(span) => span.clone(),
             Self::UnexpectedEof(span) => span.clone(),
+            Self::ExpectedKeywordFound { found, .. } => found.span(),
+            Self::ExpectedIndent(s) => s.span(),
         }
     }
 
@@ -106,6 +113,10 @@ impl<'a> Error<'a> {
             }
             Self::ExpectedEof(_) => "Expected end of file".to_string(),
             Self::UnexpectedEof(_) => "Unexpected end of file".to_string(),
+            Self::ExpectedKeywordFound { keyword, found } => {
+                format!("Expected keyword '{}', found '{}'", keyword, found.as_str())
+            }
+            Self::ExpectedIndent(s) => format!("Expected Indent found '{}'", s.as_str()),
         }
     }
 

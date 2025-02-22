@@ -15,10 +15,11 @@ use nom_language::precedence::{Operation, precedence, unary_op};
 use smallmap::Map;
 use std::num::{ParseFloatError, ParseIntError};
 
-use crate::{Expression, Fields, Node, Pattern, error::Error};
+use crate::{Expression, Field, Fields, Node, Pattern, error::Error};
 
 pub mod lib;
 pub mod pattern;
+pub mod regtest;
 pub mod simple;
 
 use lib::*;
@@ -50,6 +51,16 @@ fn parse_parameter_list(source: Source) -> IResult<Source, Vec<Pattern<'_, ()>>,
 pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     // Record the starting position.
     let begin = source.current();
+    let (source, _) = ws(tag("fn"))
+        .map_err_word(|_: nom::Err<Error>, found| {
+            nom::Err::Error(Error::ExpectedKeywordFound {
+                keyword: "fn",
+                found,
+            })
+        })
+        .parse_complete(source)?;
+
+    dbg!("function start");
 
     // Build a combined parser that consumes:
     // - The "fn" keyword and an optional identifier
@@ -57,8 +68,8 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     // - Optionally a second parameter list
     // - Optionally a return type after "->"
     // - Optionally a colon followed by an optional boundary and an expression (the function body)
-    let (source, (maybe_ident, first_params, maybe_second_params, ret_type, body)) = (
-        preceded(ws(tag("fn")), opt(ws(identifier))),
+    let (source, (maybe_ident, first_params, maybe_second_params, ret_type, body)) = cut((
+        opt(ws(identifier)),
         parse_parameter_list,
         opt(parse_parameter_list),
         opt(preceded(ws(tag("->")), cut(expression))),
@@ -66,8 +77,10 @@ pub fn function(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
             ws(tag(":")),
             preceded(opt(boundary), cut(expression)),
         )),
-    )
-        .parse_complete(source)?;
+    ))
+    .parse_complete(source)?;
+
+    dbg!("parse_complete");
 
     let (generics, args) = match maybe_second_params {
         Some(second_params) => (first_params, second_params),
@@ -242,45 +255,60 @@ pub fn r#match(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
 }
 
 pub fn attribute(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    todo!()
+    tag("#")
+        .ignore_and(surrounded('[', expression, ']'))
+        .parse_complete(source)
 }
 
-pub fn fields(source: Source) -> IResult<Source, Fields<'_, ()>, Error> {
-    todo!()
+pub fn field(source: Source) -> IResult<Source, Field<'_, ()>, Error> {
+    separated_list0(boundary, attribute)
+        .and(identifier)
+        .and(
+            ws(tag(":"))
+                .replace_error_word(|e, w| {
+                    Err::Failure(Error::ExpectedFound {
+                        span: e.span(),
+                        expected: "type",
+                        found: w,
+                    })
+                })
+                .and(cut(expression)),
+        )
+        .map(|((attributes, name), (_, value))| Field {
+            name: name.as_str(),
+            r#type: Box::new(value),
+            attributes,
+        })
+        .parse_complete(source)
 }
 
 pub fn r#struct(source: Source<'_>) -> IResult<Source<'_>, Node<'_, ()>, Error> {
-    let begin = source.current();
     let (source, _) = tag("struct")(source)?;
-    let (source, name) = ws(identifier).parse_complete(source)?;
-    let (source, generics) =
-        opt(surrounded('(', separated_list0(tag(","), pattern), ')')).parse_complete(source)?;
-    let (source, r#where) = opt(preceded(ws(tag("where")), expression)).parse_complete(source)?;
-    let (source, _) = ws(tag(":")).parse_complete(source)?;
-    let (source, _) = boundary.parse_complete(source)?;
-    let (source, _) = begin_block.parse_complete(source)?;
-    let (source, fields) =
-        separated_list0(boundary, (identifier, ws(tag(":")), expression)).parse_complete(source)?;
-    let (source, body) = program.parse_complete(source)?;
-    let (source, _) = end_block.parse_complete(source)?;
-    let end = source.current();
-    Ok((
-        source,
-        Node {
+    cut(ws(identifier)
+        .and(opt(surrounded(
+            '(',
+            separated_list0(tag(","), pattern),
+            ')',
+        )))
+        .and(opt(preceded(ws(tag("where")), expression)))
+        .and_ignore(ws(tag(":")))
+        .and_ignore(boundary)
+        .and_ignore(begin_block)
+        .and(separated_list0(boundary, field))
+        .and(program)
+        .and_ignore(end_block)
+        .map_span(|span, ((((name, generics), r#where), fields), body)| Node {
             tag: (),
-            span: begin + end,
+            span,
             expression: Expression::Struct {
                 name: name.as_str(),
                 generics: generics.unwrap_or_default(),
-                fields: fields
-                    .into_iter()
-                    .map(|(name, _, r#type)| (name.as_str(), r#type))
-                    .collect(),
+                fields,
                 body,
                 r#where: r#where.map(Box::new),
             },
-        },
-    ))
+        }))
+    .parse_complete(source)
 }
 
 pub fn r#enum<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
@@ -409,6 +437,7 @@ pub fn struct_construction<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'
 
 pub fn expression<'a>(source: Source<'a>) -> IResult<Source<'a>, Node<'a, ()>, Error<'a>> {
     not_eof(source)?;
+    dbg!("expression", source);
     let primary = |source| {
         alt((
             block,
@@ -529,6 +558,8 @@ pub fn parser(source: Source) -> IResult<Source, Vec<Node<'_, ()>>, Error> {
 
 #[cfg(test)]
 mod tests {
+    use std::process::exit;
+
     use super::*;
     use crate::Span;
 
@@ -654,6 +685,39 @@ mod tests {
                     tag: (),
                     span: Span::new("test", 18, 20),
                     expression: Expression::Integer(30),
+                },
+            ]),
+        };
+        assert_eq!(block.parse_complete(source), Ok((source.eof(), expected)));
+    }
+
+    #[test]
+    fn test_nested_block() {
+        let source = Source::new("test", "    10\n        20\n        30");
+        let expected = Node {
+            tag: (),
+            span: Span::new("test", 0, 28),
+            expression: Expression::Block(vec![
+                Node {
+                    tag: (),
+                    span: Span::new("test", 4, 6),
+                    expression: Expression::Integer(10),
+                },
+                Node {
+                    tag: (),
+                    span: Span::new("test", 11, 28),
+                    expression: Expression::Block(vec![
+                        Node {
+                            tag: (),
+                            span: Span::new("test", 15, 17),
+                            expression: Expression::Integer(20),
+                        },
+                        Node {
+                            tag: (),
+                            span: Span::new("test", 26, 28),
+                            expression: Expression::Integer(30),
+                        },
+                    ]),
                 },
             ]),
         };
@@ -961,7 +1025,7 @@ mod tests {
             },
         };
         assert_eq!(
-            function.parse_complete(source),
+            expression.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }
@@ -1005,7 +1069,7 @@ mod tests {
             },
         };
         assert_eq!(
-            function.parse_complete(source),
+            expression.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }
@@ -1045,7 +1109,7 @@ mod tests {
             },
         };
         assert_eq!(
-            function.parse_complete(source),
+            expression.parse_complete(source),
             Ok((source.eof(), expected))
         );
     }
@@ -1128,19 +1192,41 @@ mod tests {
     fn test_struct() {
         let source = Source::new(
             "test",
-            "struct Point:\n    x: i64\n    y: i64\n    fn add(self: Point, other: Point) -> Point:\n        10",
+            "struct Point:\n    x: i64\n    y: i64\n    fn add(self, other: Point) -> Point:\n        10",
         );
+        let mut s2 = Source::new("test", " Point:");
+        s2.indent = 1;
+        dbg!(expression.parse_complete(s2).unwrap());
         let expected = Node {
             tag: (),
-            span: Span::new("test", 0, 94),
+            span: Span::new("test", 6, 87),
             expression: Expression::Struct {
                 name: "Point",
                 generics: vec![],
                 r#where: None,
-                fields: vec![],
+                fields: vec![
+                    Field {
+                        name: "x",
+                        r#type: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 21, 24),
+                            expression: Expression::Variable("i64"),
+                        }),
+                        attributes: vec![],
+                    },
+                    Field {
+                        name: "y",
+                        r#type: Box::new(Node {
+                            tag: (),
+                            span: Span::new("test", 32, 35),
+                            expression: Expression::Variable("i64"),
+                        }),
+                        attributes: vec![],
+                    },
+                ],
                 body: vec![Node {
                     tag: (),
-                    span: Span::new("test", 40, 94),
+                    span: Span::new("test", 40, 87),
                     expression: Expression::Let {
                         pattern: Pattern::Capture {
                             name: "add",
@@ -1148,38 +1234,34 @@ mod tests {
                         },
                         value: Box::new(Node {
                             tag: (),
-                            span: Span::new("test", 40, 94),
+                            span: Span::new("test", 40, 87),
                             expression: Expression::Function {
                                 generics: vec![],
                                 args: vec![
                                     Pattern::Capture {
                                         name: "self",
-                                        r#type: Some(Box::new(Node {
-                                            tag: (),
-                                            span: Span::new("test", 53, 58),
-                                            expression: Expression::Variable("Point"),
-                                        })),
+                                        r#type: None,
                                     },
                                     Pattern::Capture {
                                         name: "other",
                                         r#type: Some(Box::new(Node {
                                             tag: (),
-                                            span: Span::new("test", 67, 72),
+                                            span: Span::new("test", 60, 65),
                                             expression: Expression::Variable("Point"),
                                         })),
                                     },
                                 ],
                                 r#type: Some(Box::new(Node {
                                     tag: (),
-                                    span: Span::new("test", 77, 82),
+                                    span: Span::new("test", 70, 75),
                                     expression: Expression::Variable("Point"),
                                 })),
                                 body: Some(Box::new(Node {
                                     tag: (),
-                                    span: Span::new("test", 88, 94),
+                                    span: Span::new("test", 81, 87),
                                     expression: Expression::Block(vec![Node {
                                         tag: (),
-                                        span: Span::new("test", 92, 94),
+                                        span: Span::new("test", 85, 87),
                                         expression: Expression::Integer(10),
                                     }]),
                                 })),
@@ -1303,11 +1385,11 @@ mod tests {
     fn test_interface() {
         let source = Source::new(
             "test",
-            "interface Add(Other) where 10:\n    field: i32\n    fn add(self: Self, other: Other) -> Self",
+            "interface Add(Other) where 10:\n    fn add(self: Self, other: Other) -> Self",
         );
         let expected = Node {
             tag: (),
-            span: Span::new("test", 0, 90),
+            span: Span::new("test", 0, 75),
             expression: Expression::Interface {
                 name: "Add",
                 generics: vec![Pattern::Capture {
@@ -1316,7 +1398,7 @@ mod tests {
                 }],
                 body: vec![Node {
                     tag: (),
-                    span: Span::new("test", 50, 90),
+                    span: Span::new("test", 35, 75),
                     expression: Expression::Let {
                         pattern: Pattern::Capture {
                             name: "add",
@@ -1324,7 +1406,7 @@ mod tests {
                         },
                         value: Box::new(Node {
                             tag: (),
-                            span: Span::new("test", 50, 90),
+                            span: Span::new("test", 35, 75),
                             expression: Expression::Function {
                                 generics: vec![],
                                 args: vec![
@@ -1332,7 +1414,7 @@ mod tests {
                                         name: "self",
                                         r#type: Some(Box::new(Node {
                                             tag: (),
-                                            span: Span::new("test", 63, 67),
+                                            span: Span::new("test", 48, 52),
                                             expression: Expression::Variable("Self"),
                                         })),
                                     },
@@ -1340,14 +1422,14 @@ mod tests {
                                         name: "other",
                                         r#type: Some(Box::new(Node {
                                             tag: (),
-                                            span: Span::new("test", 76, 81),
+                                            span: Span::new("test", 61, 66),
                                             expression: Expression::Variable("Other"),
                                         })),
                                     },
                                 ],
                                 r#type: Some(Box::new(Node {
                                     tag: (),
-                                    span: Span::new("test", 86, 90),
+                                    span: Span::new("test", 71, 75),
                                     expression: Expression::Variable("Self"),
                                 })),
                                 body: None,

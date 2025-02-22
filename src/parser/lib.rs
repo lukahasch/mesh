@@ -2,7 +2,7 @@ use std::ops::Deref;
 
 use crate::{Span, error::Error};
 use nom::{
-    Compare, IResult, Input, Needed, Parser,
+    Compare, IResult, Input, Needed, Offset, Parser,
     branch::alt,
     bytes::{
         complete::{tag, take_while},
@@ -13,6 +13,8 @@ use nom::{
     error::ParseError,
     multi::{count, many0},
 };
+
+use super::KEYWORDS;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Source<'a> {
@@ -163,6 +165,12 @@ impl Input for Source<'_> {
     }
 }
 
+impl<'a> Offset for Source<'a> {
+    fn offset(&self, second: &Self) -> usize {
+        self.current.offset(second.current)
+    }
+}
+
 impl<'b> Compare<&'b str> for Source<'_> {
     fn compare(&self, t: &'b str) -> nom::CompareResult {
         self.current.compare(t)
@@ -188,7 +196,9 @@ pub fn ws<'a, P: Parser<Source<'a>>>(
 
 /// four spaces or one tab
 fn one_indent(source: Source<'_>) -> IResult<Source<'_>, (), Error> {
-    alt((value((), tag("    ")), value((), tag("\t")))).parse_complete(source)
+    alt((value((), tag("    ")), value((), tag("\t"))))
+        .map_err_word(|_: nom::Err<Error>, word| nom::Err::Error(Error::ExpectedIndent(word)))
+        .parse_complete(source)
 }
 
 /// either a semicolon or a newline and the current number of indents
@@ -229,10 +239,12 @@ pub fn debug<'a, P: Parser<Source<'a>>>(
 ) -> impl Parser<Source<'a>, Output = P::Output, Error = P::Error>
 where
     P::Output: std::fmt::Debug,
+    <P as Parser<Source<'a>>>::Error: std::fmt::Debug,
 {
     (|debug_source| Ok((dbg!(debug_source), ())))
-        .and(p)
-        .map(|(_, debug_output)| dbg!(debug_output))
+        .ignore_and(p)
+        .map(|debug_output| dbg!(debug_output))
+        .map_err(|debug_error| dbg!(debug_error))
 }
 
 pub trait IgnoreAnd<'a>: Parser<Source<'a>> {
@@ -553,7 +565,7 @@ pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
         let (a, b) =
             source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
         if KEYWORDS.contains(&b.as_str()) {
-            Err(nom::Err::Error(Error::KeywordAsIdentifier(a)))
+            Err(nom::Err::Error(Error::KeywordAsIdentifier(b)))
         } else {
             Ok((a, b))
         }
