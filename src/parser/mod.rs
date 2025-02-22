@@ -19,7 +19,6 @@ use crate::{Expression, Field, Fields, Node, Pattern, error::Error};
 
 pub mod lib;
 pub mod pattern;
-pub mod regtest;
 pub mod simple;
 
 use lib::*;
