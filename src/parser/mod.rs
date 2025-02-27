@@ -16,14 +16,16 @@ use nom_language::precedence::{Operation, precedence, unary_op};
 use smallmap::Map;
 use std::num::{ParseFloatError, ParseIntError};
 
-use crate::{Expression, Field, Fields, Node, Pattern, error::Error};
+use crate::{Expression, Field, Fields, ListContent, Node, Pattern, error::Error};
 
 pub mod lib;
 
-pub const KEYWORDS: [&str; 19] = [
+pub const KEYWORDS: [&str; 20] = [
     "if", "else", "then", "elseif", "while", "for", "true", "false", "match", "with", "let", "mut",
-    "fn", "trait", "struct", "enum", "impl", "use", "where",
+    "fn", "trait", "struct", "enum", "impl", "use", "where", "as",
 ];
+
+pub const PARENS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
 
 pub fn parse<'a>(source: Source<'a>) -> Result<Vec<Node<'a, ()>>, Error<'a>> {
     many1(ws(basics))
@@ -34,7 +36,25 @@ pub fn parse<'a>(source: Source<'a>) -> Result<Vec<Node<'a, ()>>, Error<'a>> {
 }
 
 pub fn expression(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    basics.parse_complete(source)
+    alt((basics, list)).parse_complete(source)
+}
+
+pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
+    surrounded('[', separated_list0(tag(","), list_content), ']')
+        .map_span(|span, content| Node {
+            tag: (),
+            span,
+            expression: Expression::List(content),
+        })
+        .parse_complete(source)
+}
+
+pub fn list_content(source: Source) -> IResult<Source, ListContent<'_, ()>, Error> {
+    alt((
+        expression.map(ListContent::Expression),
+        preceded(tag("..."), expression).map(ListContent::Spread),
+    ))
+    .parse_complete(source)
 }
 
 pub fn basics(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
