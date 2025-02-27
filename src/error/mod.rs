@@ -35,6 +35,9 @@ pub enum Error<'a> {
         found: Source<'a>,
     } = 13,
     ExpectedIndent(Source<'a>) = 14,
+    ExpectedIdentifierFoundKeyword {
+        found: Source<'a>,
+    } = 15,
 }
 
 impl<'a> ParseError<Source<'a>> for Error<'a> {
@@ -86,6 +89,7 @@ impl<'a> Error<'a> {
             Self::UnexpectedEof(span) => span.clone(),
             Self::ExpectedKeywordFound { found, .. } => found.span(),
             Self::ExpectedIndent(s) => s.span(),
+            Self::ExpectedIdentifierFoundKeyword { found } => found.span(),
         }
     }
 
@@ -117,6 +121,9 @@ impl<'a> Error<'a> {
                 format!("Expected keyword '{}', found '{}'", keyword, found.as_str())
             }
             Self::ExpectedIndent(s) => format!("Expected Indent found '{}'", s.as_str()),
+            Self::ExpectedIdentifierFoundKeyword { found } => {
+                format!("Expected identifier found keyword '{}'", found.as_str())
+            }
         }
     }
 

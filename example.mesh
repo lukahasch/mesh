@@ -1,4 +1,1 @@
-struct Test:
-    #[serde::rename("test")]
-    #[serde::default]
-    x: i32
+er3354w45734

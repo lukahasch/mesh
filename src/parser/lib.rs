@@ -1,4 +1,4 @@
-use std::ops::Deref;
+use std::ops::{Add, Deref};
 
 use crate::{Span, error::Error};
 use nom::{
@@ -10,11 +10,9 @@ use nom::{
     },
     character::one_of,
     combinator::{eof, value},
-    error::ParseError,
+    error::{FromExternalError, ParseError},
     multi::{count, many0},
 };
-
-use super::KEYWORDS;
 
 #[derive(Debug, Clone, PartialEq, Copy)]
 pub struct Source<'a> {
@@ -56,6 +54,10 @@ impl<'a> Source<'a> {
         }
     }
 
+    pub fn to_str(self) -> &'a str {
+        self.current
+    }
+
     pub fn as_str<'b>(&'b self) -> &'a str {
         self.current
     }
@@ -76,6 +78,10 @@ impl<'a> Source<'a> {
             file: self.file,
             indent: self.indent,
         }
+    }
+
+    pub fn end(&self) -> usize {
+        self.current.len() + self.offset() - 1
     }
 
     pub fn back(&self, n: usize) -> Self {
@@ -518,6 +524,18 @@ pub fn not_eof<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error<'a>> {
     Ok((source, ()))
 }
 
+pub fn better_eof<'a>(source: Source<'a>) -> IResult<Source<'a>, (), Error<'a>> {
+    if many0(one_of("\n; \t"))
+        .and(eof::<Source, Error>)
+        .parse_complete(source)
+        .is_ok()
+    {
+        Ok((source, ()))
+    } else {
+        Err(nom::Err::Error(Error::UnexpectedEof(source.span())))
+    }
+}
+
 pub trait ReplaceError<'a, E>: Parser<Source<'a>, Error = Error<'a>> {
     fn replace_error(
         self,
@@ -560,20 +578,16 @@ impl<'a, P: Parser<Source<'a>, Error = Error<'a>, Output = O>, O> ReplaceError<'
     }
 }
 
-pub fn identifier(source: Source) -> IResult<Source, Source, Error> {
-    if Some(true) == source.char().map(|c| c.is_ascii_alphabetic() || c == '_') {
-        let (a, b) =
-            source.split_at_position_complete(|c| !(c.is_ascii_alphanumeric() || c == '_'))?;
-        if KEYWORDS.contains(&b.as_str()) {
-            Err(nom::Err::Error(Error::KeywordAsIdentifier(b)))
-        } else {
-            Ok((a, b))
+impl<'a> Add<Source<'a>> for Source<'a> {
+    type Output = Source<'a>;
+
+    fn add(self, other: Source<'a>) -> Source<'a> {
+        Source {
+            original: self.original,
+            current: &self.original
+                [self.offset().min(other.offset())..(self.end()).max(other.end())],
+            file: self.file,
+            indent: self.indent,
         }
-    } else {
-        Err(nom::Err::Error(Error::ExpectedFound {
-            span: source.current(),
-            expected: "identifier",
-            found: word(source)?.1,
-        }))
     }
 }

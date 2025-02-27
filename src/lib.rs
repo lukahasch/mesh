@@ -27,10 +27,15 @@ pub struct Field<'a, Tag> {
     attributes: Vec<Node<'a, Tag>>,
 }
 
-pub type Fields<'a, Tag> = Vec<Field<'a, Tag>>;
+#[derive(Debug, Clone, PartialEq)]
+pub enum ListContent<'a, Tag> {
+    Expression(Node<'a, Tag>),
+    Spread(Node<'a, Tag>),
+}
+
 pub type Parameters<'a, Tag> = Vec<Pattern<'a, Tag>>;
-pub type List<'a, Tag> = Vec<Node<'a, Tag>>;
-pub type Variant<'a, Tag> = (&'a str, List<'a, Tag>);
+pub type Variant<'a, Tag> = (&'a str, Vec<Node<'a, Tag>>);
+pub type Fields<'a, Tag> = Map<&'a str, Field<'a, Tag>>;
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expression<'a, Tag> {
@@ -39,7 +44,7 @@ pub enum Expression<'a, Tag> {
     String(&'a str),
     Boolean(bool),
     Variable(&'a str),
-    List(List<'a, Tag>),
+    List(Vec<ListContent<'a, Tag>>),
     StructConstruction {
         r#type: Box<Node<'a, Tag>>,
         fields: Map<&'a str, Node<'a, Tag>>,
@@ -73,7 +78,7 @@ pub enum Expression<'a, Tag> {
     },
     Call {
         function: Box<Node<'a, Tag>>,
-        args: List<'a, Tag>,
+        args: Vec<Node<'a, Tag>>,
     },
 
     Let {
@@ -117,6 +122,10 @@ pub enum Expression<'a, Tag> {
         object: Box<Node<'a, Tag>>,
         field: &'a str,
     },
+    ConstantAccess {
+        object: Box<Node<'a, Tag>>,
+        field: &'a str,
+    },
     Reference(Box<Node<'a, Tag>>),
     Dereference(Box<Node<'a, Tag>>),
 
@@ -143,7 +152,8 @@ pub enum Pattern<'a, Tag> {
     Variant { name: &'a str, fields: Vec<Pattern<'a, Tag>> },
 
     Ignore,
-    Rest(Option<&'a str>),
+    Spread(Box<Pattern<'a, Tag>>),
+    WithName { name: &'a str, pattern: Box<Pattern<'a, Tag>> },
 
     Dereference(Box<Pattern<'a, Tag>>),
     Reference(Box<Pattern<'a, Tag>>),
