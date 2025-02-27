@@ -28,7 +28,7 @@ pub const KEYWORDS: [&str; 20] = [
 pub const PARENS: [(char, char); 3] = [('(', ')'), ('[', ']'), ('{', '}')];
 
 pub fn parse<'a>(source: Source<'a>) -> Result<Vec<Node<'a, ()>>, Error<'a>> {
-    many1(ws(basics))
+    many1(ws(expression))
         .and_ignore(better_eof)
         .parse_complete(source)
         .map(|(_, nodes)| nodes)
@@ -36,11 +36,20 @@ pub fn parse<'a>(source: Source<'a>) -> Result<Vec<Node<'a, ()>>, Error<'a>> {
 }
 
 pub fn expression(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    alt((basics, list)).parse_complete(source)
+    let (source, _) = not_eof(source)?;
+    alt((ws(alt((basics, list, struct_construction))),)).parse_complete(source)
 }
 
 pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
-    surrounded('[', separated_list0(tag(","), list_content), ']')
+    fn list_content(source: Source) -> IResult<Source, ListContent<'_, ()>, Error> {
+        alt((
+            expression.map(ListContent::Expression),
+            preceded(tag("..."), expression).map(ListContent::Spread),
+        ))
+        .parse_complete(source)
+    }
+
+    surrounded('[', cut(separated_list0(ws(tag(",")), list_content)), ']')
         .map_span(|span, content| Node {
             tag: (),
             span,
@@ -49,12 +58,34 @@ pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
         .parse_complete(source)
 }
 
-pub fn list_content(source: Source) -> IResult<Source, ListContent<'_, ()>, Error> {
-    alt((
-        expression.map(ListContent::Expression),
-        preceded(tag("..."), expression).map(ListContent::Spread),
-    ))
-    .parse_complete(source)
+/// ([type]) { ([name]: [value]),*}
+pub fn struct_construction(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
+    fn fields_construction(source: Source) -> IResult<Source, Map<&str, Node<'_, ()>>, Error> {
+        let (source, _) = not_eof(source)?;
+        let (source, fields) =
+            separated_list0(ws(tag(",")), (ws(identifier), ws(tag(":")), expression))
+                .parse_complete(source)?;
+        Ok((
+            source,
+            fields
+                .into_iter()
+                .map(|(name, _, expr)| (name.to_str(), expr))
+                .collect(),
+        ))
+    }
+
+    let (source, _) = not_eof(source)?;
+    surrounded('(', cut(expression), ')')
+        .and(ws(surrounded('{', cut(fields_construction), '}')))
+        .map_span(|span, (r#type, fields)| Node {
+            tag: (),
+            span,
+            expression: Expression::StructConstruction {
+                r#type: Box::new(r#type),
+                fields,
+            },
+        })
+        .parse_complete(source)
 }
 
 pub fn basics(source: Source) -> IResult<Source, Node<'_, ()>, Error> {

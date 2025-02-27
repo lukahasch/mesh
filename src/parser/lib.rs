@@ -81,7 +81,7 @@ impl<'a> Source<'a> {
     }
 
     pub fn end(&self) -> usize {
-        self.current.len() + self.offset() - 1
+        self.current.len() + self.offset()
     }
 
     pub fn back(&self, n: usize) -> Self {
