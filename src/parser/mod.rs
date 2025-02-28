@@ -37,7 +37,20 @@ pub fn parse<'a>(source: Source<'a>) -> Result<Vec<Node<'a, ()>>, Error<'a>> {
 
 pub fn expression(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
     let (source, _) = not_eof(source)?;
-    alt((ws(alt((basics, list, struct_construction))),)).parse_complete(source)
+    alt((block, ws(alt((basics, list, struct_construction))))).parse_complete(source)
+}
+
+pub fn block(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
+    let (source, _) = not_eof(source)?;
+    begin_block
+        .and(separated_list0(boundary, expression))
+        .and(end_block)
+        .map_span(|span, (((), expressions), ())| Node {
+            tag: (),
+            span,
+            expression: Expression::Block(expressions),
+        })
+        .parse_complete(source)
 }
 
 pub fn list(source: Source) -> IResult<Source, Node<'_, ()>, Error> {
